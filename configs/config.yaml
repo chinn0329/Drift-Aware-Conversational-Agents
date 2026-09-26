@@ -1,0 +1,29 @@
+# Section 6.2 / 10.3 — backbone, embedding, and NLI model choices
+backbones:
+  primary: "claude"          # used in the head-to-head comparison (Sec 9.1)
+  bulk_generation: "llama"   # cheap bulk data-generation runs (Sec 8.3)
+
+embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+nli_model: "microsoft/deberta-large-mnli"
+
+# Section 5.1
+self_consistency:
+  n_resamples: 5
+  temperature_min: 0.7
+  temperature_max: 1.0
+
+# Section 7 — intervention gate (placeholder; calibrated via threshold sweep)
+intervention:
+  threshold: 0.5
+  max_interventions_per_conversation: 3   # Section 14 risk mitigation
+
+# Section 8.3 — dataset scaling
+dataset:
+  base_tasks: 600
+  n_backbones: 4
+  n_runs_per_task: 3
+
+paths:
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  splits: "data/splits"

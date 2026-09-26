@@ -1,0 +1,31 @@
+# --- LLM access (Section 10.3 tech stack) ---
+openai
+anthropic
+
+# --- Embeddings & NLI (self-consistency + contradiction signals, Sec 5.1 / 5.2) ---
+sentence-transformers
+transformers
+torch
+
+# --- Classifier training (Section 6) ---
+scikit-learn
+xgboost
+lightgbm
+
+# --- Orchestration ---
+langgraph
+fastapi
+uvicorn
+
+# --- Storage ---
+sqlalchemy
+
+# --- Utilities ---
+pyyaml
+pandas
+numpy
+tqdm
+python-dotenv
+
+# --- Testing ---
+pytest

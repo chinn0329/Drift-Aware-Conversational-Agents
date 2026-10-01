@@ -1,30 +1,37 @@
-"""
-Section 8.2 — Back-labeling and flattening.
-
-A failed conversation marks all of its turns, including early ones, as
-positive examples of a trajectory heading toward failure. All logged turns
-across all conversations are flattened into a single training table
-(features + eventual_success), then split by conversation ID (never by row)
-so no conversation appears on both sides of the train/test split.
-"""
-
+import json
+import os
 import pandas as pd
+import numpy as np
 
+def build_dataset_splits(
+    raw_logs_jsonl: str = "data/processed/raw_logs.jsonl",
+    output_dir: str = "data/splits"
+):
+    os.makedirs(output_dir, exist_ok=True)
+    rows = []
 
-def back_label_turns(conversation_log: dict) -> pd.DataFrame:
-    """Given one conversation's turn logs + final verdict, return a DataFrame
-    of per-turn rows all labeled with the conversation's eventual outcome.
-    """
-    raise NotImplementedError
+    with open(raw_logs_jsonl, "r") as f:
+        for line in f:
+            if line.strip():
+                rows.append(json.loads(line))
 
+    df = pd.DataFrame(rows)
+    unique_convs = df["conversation_id"].unique()
+    np.random.seed(42)
+    np.random.shuffle(unique_convs)
 
-def flatten_all(conversation_logs: list) -> pd.DataFrame:
-    """Concatenate back-labeled turns across all conversations into one table."""
-    raise NotImplementedError
+    n_total = len(unique_convs)
+    n_train = int(n_total * 0.7)
+    n_val = int(n_total * 0.15)
 
+    train_ids = set(unique_convs[:n_train])
+    val_ids = set(unique_convs[n_train: n_train + n_val])
+    test_ids = set(unique_convs[n_train + n_val:])
 
-def split_by_conversation_id(df: pd.DataFrame, train_frac=0.7, val_frac=0.15):
-    """Split strictly by conversation_id into train/val/held-out-task-family
-    sets (Section 9.3: generalization test uses held-out task families).
-    """
-    raise NotImplementedError
+    df[df["conversation_id"].isin(train_ids)].to_csv(os.path.join(output_dir, "train.csv"), index=False)
+    df[df["conversation_id"].isin(val_ids)].to_csv(os.path.join(output_dir, "val.csv"), index=False)
+    df[df["conversation_id"].isin(test_ids)].to_csv(os.path.join(output_dir, "test.csv"), index=False)
+    print(f"Successfully exported dataset splits to {output_dir}/")
+
+if __name__ == "__main__":
+    build_dataset_splits()

@@ -1,26 +1,29 @@
-"""
-Section 5.2 — Assumption-contradiction tracking
-
-After each turn, a cheap extraction prompt lists the assumptions the response
-makes about the task. Each new turn's assumptions are checked against the
-running list of prior assumptions using an NLI model (entailment / neutral /
-contradiction) or embedding similarity as a cheaper proxy.
-
-A detected contradiction = the model's own understanding of the task has
-flipped -> strong, largely unambiguous drift signal.
-"""
-
 from typing import List
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
+class ContradictionTracker:
+    def __init__(self, model_name: str = "cross-encoder/nli-deberta-v3-base"):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
 
-def extract_assumptions(turn_response: str, backbone) -> List[str]:
-    """Prompt the backbone to list assumptions made in this turn's response."""
-    raise NotImplementedError
+    def extract_assumptions(self, response_text: str, backbone) -> List[str]:
+        prompt = [
+            {"role": "system", "content": "List assumptions made in the text below as short bullet points. Output ONLY bullet points."},
+            {"role": "user", "content": response_text}
+        ]
+        raw = backbone.generate(messages=prompt, temperature=0.0)
+        return [line.strip("- *").strip() for line in raw.split("\n") if line.strip()]
 
-
-def check_contradiction(new_assumptions: List[str], prior_assumptions: List[str],
-                         nli_model) -> float:
-    """Compare new assumptions against the running list via NLI (or embedding
-    similarity proxy) and return a contradiction_score_t in [0, 1].
-    """
-    raise NotImplementedError
+    def check_contradiction(self, historical_assumptions: List[str], new_assumptions: List[str]) -> float:
+        if not historical_assumptions or not new_assumptions:
+            return 0.0
+        max_contradiction = 0.0
+        for old_a in historical_assumptions:
+            for new_a in new_assumptions:
+                inputs = self.tokenizer(old_a, new_a, return_tensors="pt", truncation=True)
+                with torch.no_grad():
+                    logits = self.model(**inputs).logits
+                    probs = torch.softmax(logits, dim=1)[0]
+                    max_contradiction = max(max_contradiction, float(probs[0]))
+        return max_contradiction

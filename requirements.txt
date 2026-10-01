@@ -1,31 +1,37 @@
-# --- LLM access (Section 10.3 tech stack) ---
-openai
-anthropic
 
-# --- Embeddings & NLI (self-consistency + contradiction signals, Sec 5.1 / 5.2) ---
-sentence-transformers
-transformers
-torch
+# --- Person A: LLM Backends & Pipeline Infrastructure ---
+openai>=1.12.0
+anthropic>=0.18.0
+tiktoken>=0.6.0
+vllm>=0.3.0               # For local open-weight generation (Llama/Qwen)
 
-# --- Classifier training (Section 6) ---
-scikit-learn
-xgboost
-lightgbm
+# --- Person A: Drift Signals (Embeddings, NLI & Metrics) ---
+torch>=2.0.0
+transformers>=4.38.0
+sentence-transformers>=2.5.0  # For self-consistency embedding variance (all-MiniLM-L6-v2)
+scikit-learn>=1.4.0           # Cosine distance metrics & split helpers
+numpy>=1.26.0
 
-# --- Orchestration ---
-langgraph
-fastapi
-uvicorn
+# --- Person A: Data Wrangling & Utilities ---
+pandas>=2.2.0
+pyyaml>=6.0
+tqdm>=4.66.0                  # Progress bars for bulk dataset generation
+jsonlines>=4.0.0
+python-dotenv>=1.0.0
+pydantic>=2.6.0
 
-# --- Storage ---
-sqlalchemy
+# --- Person B: Classifiers & Evaluation (Shared) ---
+xgboost>=2.0.0
+lightgbm>=4.3.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
 
-# --- Utilities ---
-pyyaml
-pandas
-numpy
-tqdm
-python-dotenv
+# --- Person C: Orchestrator & Backend API (Shared) ---
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+sqlalchemy>=2.0.0
+websockets>=12.0
 
-# --- Testing ---
-pytest
+# --- Testing & Development ---
+pytest>=8.0.0
+pytest-asyncio>=0.23.0

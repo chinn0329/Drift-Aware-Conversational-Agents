@@ -1,30 +1,16 @@
-"""
-Section 5.4 — Commitment-to-underspecification ratio
+class CommitmentRatioTracker:
+    def __init__(self):
+        self.underspecified_turns = 0
+        self.silent_commitments = 0
 
-For every turn where the instruction is genuinely underspecified (known from
-the benchmark's own shard structure), check whether the model asked a
-clarifying question or silently picked an interpretation and proceeded.
-A running ratio of silent commitments to total underspecified turns is a
-direct behavioral fingerprint of accumulating drift risk.
-"""
+    def check_if_asked_clarification(self, response_text: str) -> bool:
+        return "?" in response_text and any(
+            kw in response_text.lower() for kw in ["clarify", "specify", "mean", "which", "do you want"]
+        )
 
-
-def is_underspecified_turn(shard_metadata: dict) -> bool:
-    """Look up whether this turn's shard is flagged as underspecified
-    in the benchmark's own shard structure.
-    """
-    raise NotImplementedError
-
-
-def did_ask_clarifying_question(turn_response: str) -> bool:
-    """Classify whether the turn's response asked a clarifying question
-    vs. silently picked an interpretation and proceeded.
-    """
-    raise NotImplementedError
-
-
-def update_commitment_ratio(silent_commitments: int, total_underspecified_turns: int) -> float:
-    """Return the running silent_commitment_ratio_t."""
-    if total_underspecified_turns == 0:
-        return 0.0
-    return silent_commitments / total_underspecified_turns
+    def update(self, is_underspecified: bool, asked_clarification: bool) -> float:
+        if is_underspecified:
+            self.underspecified_turns += 1
+            if not asked_clarification:
+                self.silent_commitments += 1
+        return (self.silent_commitments / self.underspecified_turns) if self.underspecified_turns > 0 else 0.0

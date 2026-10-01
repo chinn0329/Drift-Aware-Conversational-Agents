@@ -1,24 +1,20 @@
-"""
-Section 5.3 — Verbalized-confidence trend
+import re
 
-After each turn, ask the model to self-rate its confidence in its current
-understanding of the task. A single value is noisy; the trend across turns
-(steady decline or sudden drop) correlates with the model sensing drift
-before it can fully articulate it.
-"""
+class ConfidenceTracker:
+    def __init__(self):
+        self.prev_confidence = 1.0
 
+    def query_verbalized_confidence(self, conversation_history: list, backbone) -> float:
+        prompt = conversation_history + [{
+            "role": "user", 
+            "content": "On a scale from 0.0 to 1.0, how confident are you in your understanding of requirements so far? Output ONLY a float number."
+        }]
+        raw = backbone.generate(messages=prompt, temperature=0.0)
+        match = re.search(r"0\.\d+|1\.0|0", raw)
+        return float(match.group(0)) if match else 0.8
 
-def get_verbalized_confidence(turn_response_context: str, backbone) -> float:
-    """Ask the backbone to self-rate confidence in its current task understanding.
-
-    Returns:
-        confidence_t in [0, 1]
-    """
-    raise NotImplementedError
-
-
-def compute_confidence_delta(confidence_history: list) -> float:
-    """Compute confidence_delta_t from the running confidence history
-    (e.g. confidence_t - confidence_{t-1}, or a windowed slope).
-    """
-    raise NotImplementedError
+    def process_turn(self, raw_confidence_score: float) -> tuple[float, float]:
+        score = max(0.0, min(1.0, raw_confidence_score))
+        delta = score - self.prev_confidence
+        self.prev_confidence = score
+        return score, delta

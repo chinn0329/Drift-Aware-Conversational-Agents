@@ -9,11 +9,11 @@ __pycache__/
 
 # Data (large / generated — not committed, regenerate via scripts/)
 data/raw/*
-!data/raw/.gitkeep
+data/raw/.gitkeep
 data/processed/*
-!data/processed/.gitkeep
+data/processed/.gitkeep
 data/splits/*
-!data/splits/.gitkeep
+data/splits/.gitkeep
 
 # Trained models
 *.pkl

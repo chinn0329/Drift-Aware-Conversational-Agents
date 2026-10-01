@@ -1,44 +1,53 @@
-"""
-Section 5.5 — Fusing the signals
+from sentence_transformers import SentenceTransformer
+from src.signals.schemas import DriftFeatureVector
+from src.signals.self_consistency import resample_responses, compute_variance
+from src.signals.contradiction import ContradictionTracker
+from src.signals.confidence import ConfidenceTracker
+from src.signals.commitment_ratio import CommitmentRatioTracker
 
-Per turn, the four signals form a feature vector:
+class FeatureBuilder:
+    def __init__(self, embedding_model_name: str = "all-MiniLM-L6-v2"):
+        # Models load into memory ONLY ONCE when FeatureBuilder is created
+        self.embedding_model = SentenceTransformer(embedding_model_name)
+        self.contradiction_tracker = ContradictionTracker()
+        self.reset()
 
-    features_t = [
-        self_consistency_variance_t,
-        contradiction_score_t,
-        confidence_t,
-        confidence_delta_t,
-        silent_commitment_ratio_t,
-    ]
+    def reset(self):
+        """Resets conversation state between tasks without reloading models."""
+        self.confidence_tracker = ConfidenceTracker()
+        self.commitment_tracker = CommitmentRatioTracker()
+        self.historical_assumptions = []
 
-This vector is passed to the trained drift classifier (src/classifier/) which
-outputs a single calibrated drift_score_t in [0, 1].
-"""
+    def compute_turn_features(
+        self,
+        conversation_id: str,
+        turn_index: int,
+        conversation_history: list,
+        assistant_response: str,
+        is_underspecified: bool,
+        backbone
+    ) -> DriftFeatureVector:
+        samples = resample_responses(conversation_history, backbone, n=5, temperature=0.85)
+        var_score = compute_variance(samples, self.embedding_model)
 
-from dataclasses import dataclass
+        new_assumptions = self.contradiction_tracker.extract_assumptions(assistant_response, backbone)
+        contra_score = self.contradiction_tracker.check_contradiction(
+            self.historical_assumptions, new_assumptions
+        )
+        self.historical_assumptions.extend(new_assumptions)
 
+        raw_conf = self.confidence_tracker.query_verbalized_confidence(conversation_history, backbone)
+        conf_score, conf_delta = self.confidence_tracker.process_turn(raw_conf)
 
-@dataclass
-class TurnFeatures:
-    self_consistency_variance_t: float
-    contradiction_score_t: float
-    confidence_t: float
-    confidence_delta_t: float
-    silent_commitment_ratio_t: float
+        asked_clarify = self.commitment_tracker.check_if_asked_clarification(assistant_response)
+        commit_ratio = self.commitment_tracker.update(is_underspecified, asked_clarify)
 
-    def as_vector(self) -> list:
-        return [
-            self.self_consistency_variance_t,
-            self.contradiction_score_t,
-            self.confidence_t,
-            self.confidence_delta_t,
-            self.silent_commitment_ratio_t,
-        ]
-
-
-def build_feature_vector(**signal_outputs) -> TurnFeatures:
-    """Assemble the five-element feature vector for one turn from the
-    individual signal computations in self_consistency.py, contradiction.py,
-    and confidence.py / commitment_ratio.py.
-    """
-    return TurnFeatures(**signal_outputs)
+        return DriftFeatureVector(
+            conversation_id=conversation_id,
+            turn_index=turn_index,
+            self_consistency_variance=var_score,
+            contradiction_score=contra_score,
+            confidence=conf_score,
+            confidence_delta=conf_delta,
+            silent_commitment_ratio=commit_ratio
+        )

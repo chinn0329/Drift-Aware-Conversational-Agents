@@ -2,12 +2,18 @@ from typing import List
 import numpy as np
 from sklearn.metrics.pairwise import cosine_distances
 
-def resample_responses(conversation_history: list, backbone, n: int = 5, temperature: float = 0.85) -> List[str]:
+
+def resample_responses(
+    conversation_history: list, backbone, n: int = 2, temperature: float = 0.85
+) -> List[str]:
     responses = []
     for _ in range(n):
-        resp = backbone.generate(messages=conversation_history, temperature=temperature)
+        resp = backbone.generate(
+            messages=conversation_history, temperature=temperature, max_tokens=100
+        )
         responses.append(resp)
     return responses
+
 
 def compute_variance(responses: List[str], embedding_model) -> float:
     if not responses or len(responses) < 2:

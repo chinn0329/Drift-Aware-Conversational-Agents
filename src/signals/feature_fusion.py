@@ -25,9 +25,11 @@ class FeatureBuilder:
         conversation_history: list,
         assistant_response: str,
         is_underspecified: bool,
-        backbone
+        backbone,
+        n_resamples: int = 2,
+        eventual_success: bool = None
     ) -> DriftFeatureVector:
-        samples = resample_responses(conversation_history, backbone, n=5, temperature=0.85)
+        samples = resample_responses(conversation_history, backbone, n=n_resamples, temperature=0.85)
         var_score = compute_variance(samples, self.embedding_model)
 
         new_assumptions = self.contradiction_tracker.extract_assumptions(assistant_response, backbone)
@@ -49,5 +51,6 @@ class FeatureBuilder:
             contradiction_score=contra_score,
             confidence=conf_score,
             confidence_delta=conf_delta,
-            silent_commitment_ratio=commit_ratio
+            silent_commitment_ratio=commit_ratio,
+            eventual_success=eventual_success
         )

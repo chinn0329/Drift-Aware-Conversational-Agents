@@ -1,0 +1,59 @@
+{
+  "warnings": [
+    "Constant (zero-information) features: ['silent_commitment_ratio'] - ask Person A why.",
+    "20 (conversation, turn) pairs have several rows (repeated runs/resamples?).",
+    "Split 'test' has only 3 conversation(s) of its rarer class; metrics on it are very noisy.",
+    "Split 'val' has only 2 conversation(s) of its rarer class; metrics on it are very noisy.",
+    "Group 'lcb_easy': every one of its 10 conversations failed (group is a confound).",
+    "Group 'lcb_medium': every one of its 10 conversations failed (group is a confound)."
+  ],
+  "n_rows": 461,
+  "n_conversations": 65,
+  "conversation_failure_rate": 0.8,
+  "per_split": {
+    "test": {
+      "conversations": 10,
+      "rows": 75,
+      "failed": 7,
+      "succeeded": 3
+    },
+    "train": {
+      "conversations": 45,
+      "rows": 309,
+      "failed": 37,
+      "succeeded": 8
+    },
+    "val": {
+      "conversations": 10,
+      "rows": 77,
+      "failed": 8,
+      "succeeded": 2
+    }
+  },
+  "per_group": {
+    "humaneval": {
+      "conversations": 45,
+      "failure_rate": 0.7111111111111111
+    },
+    "lcb_easy": {
+      "conversations": 10,
+      "failure_rate": 1.0
+    },
+    "lcb_medium": {
+      "conversations": 10,
+      "failure_rate": 1.0
+    }
+  },
+  "duplicate_turn_rows": 20,
+  "nan_features": {},
+  "constant_features": [
+    "silent_commitment_ratio"
+  ],
+  "features_used": [
+    "self_consistency_variance",
+    "contradiction_score",
+    "confidence",
+    "confidence_delta"
+  ],
+  "fingerprint": "8af0ea531c2c"
+}

@@ -1,0 +1,112 @@
+# Person B - drift classifier configuration.
+# Everything the pipeline needs to know about the data schema lives here, so a
+# renamed column or a new data drop is a config change, not a code change.
+
+seed: 42
+
+paths:
+  models_dir: models                 # trained artifacts (one folder per run + latest.json)
+  reports_dir: reports/classifier    # metrics, tables and figures (one folder per run)
+
+data:
+  # "splits"   -> read train.csv / val.csv / test.csv from splits_dir (Person A's splits)
+  # "raw_logs" -> read every jsonl in raw_logs_glob and re-split deterministically by
+  #               conversation_id hash (use this when new conversations are appended:
+  #               existing conversations never change split, new ones are assigned stably)
+  source: splits
+  splits_dir: data/splits
+  raw_logs_glob: data/processed/*.jsonl
+  hash_split_fractions: {train: 0.70, val: 0.15, test: 0.15}
+  hash_seed: 0
+
+  # Column names in Person A's files
+  id_col: conversation_id
+  turn_col: turn_index
+  label_col: eventual_success
+  label_is_success: true             # true => failure = NOT label. drift_score = P(failure)
+  group_col: source                  # humaneval / lcb_easy / ...; used for per-group reports
+
+  # The agreed 5-feature contract (order matters for predict_drift_score(list))
+  features:
+    - self_consistency_variance
+    - contradiction_score
+    - confidence
+    - confidence_delta
+    - silent_commitment_ratio
+  extra_features: []                 # e.g. [turn_index]; off by default to keep the contract
+  drop_constant_features: true       # silent_commitment_ratio is all zeros right now
+  duplicate_policy: keep             # keep | mean  (several rows can share conversation_id+turn_index)
+
+# Signal groups used by explain() / dominant-signal routing for Person C.
+signal_groups:
+  self_consistency: [self_consistency_variance]
+  contradiction: [contradiction_score]
+  confidence: [confidence, confidence_delta]
+  silent_commitment: [silent_commitment_ratio]
+
+evaluation:
+  # cv     -> pool train+val+test, repeated stratified GROUP k-fold. Use while data is small
+  #           (the fixed val/test splits currently hold only 2-3 successful conversations each).
+  # splits -> fit on train, calibrate + pick threshold on val, report on test.
+  # auto   -> "splits" once val and test each have >= min_conversations_per_split conversations
+  #           and >= min_minority_per_split of the rarer class, else "cv".
+  mode: auto
+  min_conversations_per_split: 100
+  min_minority_per_split: 20
+  cv_folds: 5
+  cv_repeats: 5
+  bootstrap_samples: 1000            # conversation-level bootstrap for AUROC CIs
+
+models: [logreg, xgboost, mlp]
+
+selection:
+  primary_model: auto                # auto | logreg | xgboost | mlp
+  metric: auto                       # auto | pooled | within_group.  auto = macro AUROC *within* each task
+                                     # source that has both outcomes (falls back to pooled). Pooled AUROC alone
+                                     # rewards recognising "which benchmark is this" when a source never succeeds.
+  tolerance: 0.01                    # auto: simplest model within this AUROC of the best wins
+  # (the plan says to justify the choice, not just take the top score)
+
+training:
+  balance_classes: true              # class-balanced weights for logreg / xgboost
+  tune: auto                         # auto | true | false
+  tune_min_conversations: 150        # auto: only grid-search once there is enough data
+  tune_folds: 3
+
+model_params:
+  logreg:
+    C: 0.5
+  xgboost:
+    n_estimators: 200
+    max_depth: 2
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 3
+    reg_lambda: 5.0
+  mlp:
+    hidden_layer_sizes: [16, 8]
+    alpha: 0.01
+    max_iter: 800
+
+tune_grids:
+  logreg:
+    C: [0.05, 0.1, 0.5, 1.0, 5.0]
+  xgboost:
+    max_depth: [2, 3, 4]
+    learning_rate: [0.03, 0.05, 0.1]
+  mlp:
+    alpha: [0.001, 0.01, 0.1]
+    hidden_layer_sizes: [[8], [16, 8]]
+
+calibration:
+  method: platt                      # platt | isotonic | none  (platt is safer on small data)
+
+threshold:
+  # youden is prevalence-independent. With ~80% of conversations failing, "maximise F1" would
+  # just flag everything, so it is NOT the default.
+  strategy: youden                   # youden | fbeta | target_recall | max_flag_rate
+  beta: 1.0                          # fbeta
+  target_recall: 0.80                # target_recall
+  max_flag_rate: 0.50                # max_flag_rate (share of turns that may trigger intervention)
+  grid_step: 0.01

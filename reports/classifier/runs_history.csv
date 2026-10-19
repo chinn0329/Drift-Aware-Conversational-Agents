@@ -1,0 +1,2 @@
+run_id,created,mode,n_conversations,n_rows,fingerprint,primary,threshold,auroc,ece
+20261019-145248,2026-10-19T14:53:12,cv,65,461,8af0ea531c2c,xgboost,0.89,0.7648284140658099,0.05104992299139258

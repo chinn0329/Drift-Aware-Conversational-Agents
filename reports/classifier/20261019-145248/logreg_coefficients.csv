@@ -1,0 +1,5 @@
+feature,std_coef_toward_failure
+self_consistency_variance,0.996357350594298
+confidence,0.411937317534187
+contradiction_score,-0.2834317797262622
+confidence_delta,-0.0669918840877234

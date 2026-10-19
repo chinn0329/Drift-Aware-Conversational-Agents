@@ -4,6 +4,11 @@ __pycache__/
 .venv/
 *.egg-info/
 
+venv/
+__pycache__/
+*.pyc
+.env
+requirements-local.txt
 # Env / secrets
 .env
 
@@ -30,3 +35,7 @@ frontend/dist/
 
 # OS
 .DS_Store
+
+   models/*/
+   !models/latest.json
+   reports/

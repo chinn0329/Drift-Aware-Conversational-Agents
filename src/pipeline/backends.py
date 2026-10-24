@@ -7,11 +7,11 @@ load_dotenv()
 
 
 def _load_groq_keys() -> list[str]:
-    """Load all available Groq API keys from environment (supports up to 4)."""
+    """Load all available Groq API keys from environment (supports up to 10)."""
     keys = []
-    for env_var in ("GROQ_API_KEY", "GROQ_API_KEY_2", "GROQ_API_KEY_3", "GROQ_API_KEY_4"):
+    for env_var in ["GROQ_API_KEY"] + [f"GROQ_API_KEY_{i}" for i in range(2, 11)]:
         key = os.getenv(env_var)
-        if key and key.strip():
+        if key and key.strip() and key.strip() not in keys:
             keys.append(key.strip())
     return keys
 
@@ -64,7 +64,7 @@ class LLMBackend:
         )
 
     def generate(self, messages: list, temperature: float = 0.7, max_tokens: int = 512) -> str:
-        max_retries = 8
+        max_retries = 16
         for attempt in range(max_retries):
             try:
                 resp = self.client.chat.completions.create(
@@ -77,11 +77,26 @@ class LLMBackend:
                 content = choice.message.content
                 if not content and hasattr(choice.message, "reasoning") and choice.message.reasoning:
                     content = choice.message.reasoning
-                return content or ""
+                # Guard: Qwen sometimes returns empty content instead of raising
+                if not content or not content.strip():
+                    if attempt < max_retries - 1:
+                        self._rotate_key()
+                        print(f"Empty model output detected, rotating key and retrying ({attempt + 1}/{max_retries})...", flush=True)
+                        time.sleep(2)
+                        continue
+                    return ""
+                return content
             except Exception as e:
                 err_str = str(e).lower()
                 status_code = getattr(e, "status_code", None)
-                if status_code == 429 or "rate limit" in err_str:
+                # Empty-output API error from Groq/Qwen (not a rate limit)
+                _empty_output_err = "model output must contain either output text or tool calls"
+                if _empty_output_err in err_str:
+                    self._rotate_key()
+                    wait_time = min(10, 2 ** attempt)
+                    print(f"Empty-output error from model, rotating key and retrying in {wait_time}s... ({attempt + 1}/{max_retries})", flush=True)
+                    time.sleep(wait_time)
+                elif status_code == 429 or "rate limit" in err_str:
                     # Rotate key first, then wait a short time
                     self._rotate_key()
                     wait_time = min(15, 2 ** attempt)

@@ -35,6 +35,11 @@ def build_dataset(
     df = pd.DataFrame(records)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if "silent_commitment_ratio" not in df.columns and "clarification_ask_rate" in df.columns:
+        df["silent_commitment_ratio"] = df["clarification_ask_rate"]
+    elif "clarification_ask_rate" not in df.columns and "silent_commitment_ratio" in df.columns:
+        df["clarification_ask_rate"] = df["silent_commitment_ratio"]
+
     required_cols = [
         "conversation_id",
         "turn_index",
@@ -70,9 +75,13 @@ def build_dataset(
     train_ids, test_val_ids = train_test_split(
         unique_convs, test_size=0.30, random_state=random_state
     )
-    val_ids, test_ids = train_test_split(
-        test_val_ids, test_size=0.50, random_state=random_state
-    )
+    if len(test_val_ids) >= 2:
+        val_ids, test_ids = train_test_split(
+            test_val_ids, test_size=0.50, random_state=random_state
+        )
+    else:
+        val_ids = test_val_ids
+        test_ids = test_val_ids
 
     train_df = df[df["conversation_id"].isin(train_ids)].sort_values(
         ["conversation_id", "turn_index"]

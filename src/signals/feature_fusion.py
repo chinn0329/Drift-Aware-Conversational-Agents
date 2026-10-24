@@ -1,3 +1,18 @@
+"""
+FeatureBuilder — v2
+
+Changes from v1:
+- Contradiction: calls tracker.reset() between conversations; the tracker now
+  only compares adjacent turns (not full history vs current), preventing saturation.
+- Confidence: blends verbalized self-report with the hedging-language heuristic
+  from the response text for a finer-grained, less-discretized score.
+- Self-consistency: resamples 3 responses (n=3) instead of 1, giving a real
+  variance estimate over 3 pairwise distances.
+- Commitment: field renamed silent_commitment_ratio → clarification_ask_rate.
+  No longer depends on is_underspecified; just tracks whether the assistant
+  asked a clarifying question each turn.
+"""
+
 from sentence_transformers import SentenceTransformer
 from src.signals.schemas import DriftFeatureVector
 from src.signals.self_consistency import resample_responses, compute_variance
@@ -5,18 +20,19 @@ from src.signals.contradiction import ContradictionTracker
 from src.signals.confidence import ConfidenceTracker
 from src.signals.commitment_ratio import CommitmentRatioTracker
 
+
 class FeatureBuilder:
     def __init__(self, embedding_model_name: str = "all-MiniLM-L6-v2"):
-        # Models load into memory ONLY ONCE when FeatureBuilder is created
+        # Heavy models load ONCE; reset() clears per-conversation state.
         self.embedding_model = SentenceTransformer(embedding_model_name)
         self.contradiction_tracker = ContradictionTracker()
         self.reset()
 
     def reset(self):
-        """Resets conversation state between tasks without reloading models."""
+        """Reset per-conversation state without reloading models."""
         self.confidence_tracker = ConfidenceTracker()
         self.commitment_tracker = CommitmentRatioTracker()
-        self.historical_assumptions = []
+        self.contradiction_tracker.reset()   # clears the prev-turn window
 
     def compute_turn_features(
         self,
@@ -26,23 +42,42 @@ class FeatureBuilder:
         assistant_response: str,
         is_underspecified: bool,
         backbone,
-        n_resamples: int = 2,
-        eventual_success: bool = None
+        n_resamples: int = 3,
+        eventual_success: bool = None,
     ) -> DriftFeatureVector:
-        samples = resample_responses(conversation_history, backbone, n=n_resamples, temperature=0.85)
+
+        # ── Self-consistency variance (3 resamples at T=0.9) ──────────────────
+        alt_samples = resample_responses(
+            conversation_history, backbone, n=n_resamples, temperature=0.9
+        )
+        samples = [assistant_response] + alt_samples
         var_score = compute_variance(samples, self.embedding_model)
 
-        new_assumptions = self.contradiction_tracker.extract_assumptions(assistant_response, backbone)
+        # ── Contradiction (adjacent-turn only) ────────────────────────────────
+        new_assumptions = self.contradiction_tracker.extract_assumptions(assistant_response)
         contra_score = self.contradiction_tracker.check_contradiction(
-            self.historical_assumptions, new_assumptions
+            [],  # historical_assumptions arg unused in v2; passing empty for compat
+            new_assumptions,
         )
-        self.historical_assumptions.extend(new_assumptions)
 
-        raw_conf = self.confidence_tracker.query_verbalized_confidence(conversation_history, backbone)
-        conf_score, conf_delta = self.confidence_tracker.process_turn(raw_conf)
+        # ── Confidence (verbalized + hedging heuristic blend) ─────────────────
+        raw_conf = self.confidence_tracker.query_verbalized_confidence(
+            conversation_history, backbone
+        )
+        composite_conf = self.confidence_tracker.compute_composite_confidence(
+            verbalized=raw_conf,
+            response_text=assistant_response,
+        )
+        conf_score, conf_delta = self.confidence_tracker.process_turn(composite_conf)
 
-        asked_clarify = self.commitment_tracker.check_if_asked_clarification(assistant_response)
-        commit_ratio = self.commitment_tracker.update(is_underspecified, asked_clarify)
+        # ── Clarification-ask rate ────────────────────────────────────────────
+        asked_clarify = self.commitment_tracker.check_if_asked_clarification(
+            assistant_response
+        )
+        clarification_rate = self.commitment_tracker.update(
+            is_underspecified=is_underspecified,  # kept for compat, unused
+            asked_clarification=asked_clarify,
+        )
 
         return DriftFeatureVector(
             conversation_id=conversation_id,
@@ -51,6 +86,6 @@ class FeatureBuilder:
             contradiction_score=contra_score,
             confidence=conf_score,
             confidence_delta=conf_delta,
-            silent_commitment_ratio=commit_ratio,
-            eventual_success=eventual_success
+            clarification_ask_rate=clarification_rate,
+            eventual_success=eventual_success,
         )

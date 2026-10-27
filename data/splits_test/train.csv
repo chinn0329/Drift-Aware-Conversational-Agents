@@ -1,0 +1,11 @@
+conversation_id,turn_index,self_consistency_variance,contradiction_score,confidence,confidence_delta,silent_commitment_ratio,eventual_success,source,finish_reason,truncated,label_valid,label_reason,assistant_model,run_index,extractor_version,n_resamples,any_turn_truncated,prompt_version
+sharded-livecodebench/2727,1,0.08228230476379395,0.0,0.8,0.0,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,2,0.23449021577835083,0.9281210899353027,0.8,0.0,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,3,0.019969582557678223,0.9996978044509888,0.8,0.0,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,4,0.0,0.4675578773021698,0.8,0.0,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,5,0.0,0.999765932559967,0.7,-0.10000000000000009,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,6,0.0,0.9977973699569702,0.95,0.25,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,7,0.13491714000701904,0.9970996379852295,0.95,0.0,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,8,0.0,0.9970996379852295,0.85,-0.09999999999999998,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,9,0.0017535686492919922,0.9970996379852295,0.7,-0.15000000000000002,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1
+sharded-livecodebench/2727,10,0.0,0.999765932559967,0.6,-0.09999999999999998,1.0,True,lcb_easy,stop,False,True,ok,openai/gpt-oss-20b,0,v4,2,False,lcb_codeonly_v1

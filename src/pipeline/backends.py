@@ -2,6 +2,13 @@ import os
 import time
 from dotenv import load_dotenv
 from openai import OpenAI
+import re
+from openai import RateLimitError
+
+class LLMError(RuntimeError): pass
+class DailyLimitError(LLMError): pass
+
+THINK_RE = re.compile(r"<think>.*?</think>", re.S)
 
 load_dotenv()
 
@@ -19,6 +26,7 @@ def _load_groq_keys() -> list[str]:
 class LLMBackend:
     def __init__(self, provider: str = None, model_name: str = None):
         groq_keys = _load_groq_keys()
+        self.last_finish_reason = None
 
         if provider is None:
             provider = "groq" if groq_keys else "ollama"
@@ -50,6 +58,7 @@ class LLMBackend:
             base_url="https://api.groq.com/openai/v1",
             api_key=api_key,
             timeout=60.0,
+            max_retries=0,
         )
 
     def _rotate_key(self) -> None:
@@ -64,33 +73,36 @@ class LLMBackend:
         )
 
     def generate(self, messages: list, temperature: float = 0.7, max_tokens: int = 512) -> str:
-        max_retries = 8
-        for attempt in range(max_retries):
+        for attempt in range(6):
             try:
-                resp = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
+                    extra = {}
+                    budget = max_tokens
+                    if "gpt-oss" in self.model_name:
+                        extra["extra_body"] = {"reasoning_effort": "low"}   # keep hidden thinking short
+                    budget = max_tokens + 1024                          # headroom for the thinking tokens
+                    resp = self.client.chat.completions.create(
+                        model=self.model_name, messages=messages,
+                        temperature=temperature, max_tokens=budget, **extra,
                 )
-                choice = resp.choices[0]
-                content = choice.message.content
-                if not content and hasattr(choice.message, "reasoning") and choice.message.reasoning:
-                    content = choice.message.reasoning
-                return content or ""
+            except RateLimitError as e:
+                msg = str(e).lower()
+                if "per day" in msg or "(tpd)" in msg:
+                    raise DailyLimitError(str(e))      # retrying cannot help
+                hdr = getattr(getattr(e, "response", None), "headers", {}) or {}
+                wait = float(hdr.get("retry-after", min(30, 2 ** attempt)))
+                print(f"Rate limited, waiting {wait:.0f}s (attempt {attempt+1}/6)", flush=True)
+                time.sleep(wait + 0.5)
+                continue
             except Exception as e:
-                err_str = str(e).lower()
-                status_code = getattr(e, "status_code", None)
-                if status_code == 429 or "rate limit" in err_str:
-                    # Rotate key first, then wait a short time
-                    self._rotate_key()
-                    wait_time = min(15, 2 ** attempt)
-                    print(f"Rate limited. Switched key, retrying in {wait_time}s... (attempt {attempt + 1}/{max_retries})", flush=True)
-                    time.sleep(wait_time)
-                elif attempt < max_retries - 1:
-                    print(f"Retrying request ({attempt + 1}/{max_retries}) due to: {e}", flush=True)
-                    time.sleep(1)
-                else:
-                    print(f"{self.provider.capitalize()} generation error: {e}", flush=True)
-                    return ""
-        return ""
+                if attempt == 5:
+                    raise LLMError(str(e))
+                time.sleep(1 + attempt)
+                continue
+
+            choice = resp.choices[0]
+            self.last_finish_reason = choice.finish_reason
+            text = THINK_RE.sub("", choice.message.content or "").strip()
+            if not text:
+                raise LLMError(f"empty content (finish_reason={choice.finish_reason})")
+            return text
+        raise LLMError("retries exhausted")

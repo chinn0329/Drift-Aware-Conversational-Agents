@@ -4,12 +4,13 @@ from sklearn.metrics.pairwise import cosine_distances
 
 
 def resample_responses(
-    conversation_history: list, backbone, n: int = 2, temperature: float = 0.85
+    conversation_history: list, backbone, n: int = 2, temperature: float = 0.85,
+    max_tokens: int = 256,
 ) -> List[str]:
     responses = []
     for _ in range(n):
         resp = backbone.generate(
-            messages=conversation_history, temperature=temperature, max_tokens=100
+            messages=conversation_history, temperature=temperature, max_tokens=max_tokens
         )
         responses.append(resp)
     return responses

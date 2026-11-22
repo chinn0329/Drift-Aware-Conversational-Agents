@@ -8,8 +8,7 @@ from src.pipeline.backends import LLMBackend, LLMError, DailyLimitError
 from src.signals.feature_fusion import FeatureBuilder
 from src.pipeline.dataset_builder import build_dataset
 
-# Step 3+ adds src/pipeline/evaluators.py. Until it exists, everything falls
-# back to the LLM judge so this file runs today.
+# Executable evaluators (LCB, BFCL). Families without one fall back to the LLM judge.
 try:
     from src.pipeline.evaluators import evaluate as exec_evaluate
 except ImportError:
@@ -18,7 +17,6 @@ except ImportError:
 EXTRACTOR_VERSION = "v5"
 
 # Per-family output budgets for the assistant's turn (tokens).
-# Code gets a big budget so solutions are not cut off mid-function.
 MAX_TOKENS = {
     "livecodebench": 2048,
     "humaneval": 1024,
@@ -140,12 +138,10 @@ def judge_eventual_success(task: dict, history: list[dict], backbone: LLMBackend
     return "true" in verdict_raw
 
 
-PROMPT_VERSION = "lcb_codeonly_v1"
-
-
 def first_shard_text(task, shard_text):
-    """Prepend a format instruction for LiveCodeBench tasks (shard 1 only)."""
-    if str(task.get("source", "")).lower().startswith("lcb"):
+    """Prepend a format instruction (and schema, for BFCL) to shard 1 only."""
+    src = str(task.get("source", "")).lower()
+    if src.startswith("lcb"):
         starter = (task.get("starter_code") or "").rstrip()
         return (
             "You will receive a programming problem in pieces over several messages. "
@@ -156,7 +152,34 @@ def first_shard_text(task, shard_text):
             "Update your solution as new details arrive.\n\n"
             f"First detail: {shard_text}"
         )
+    if task.get("task") == "actions":
+        funcs = task.get("function")
+        if not isinstance(funcs, str):
+            funcs = json.dumps(funcs)
+        return (
+            "You are a function-calling assistant. You will receive a request in pieces "
+            "over several messages. Do NOT write code, explanations or tutorials. "
+            "In EVERY reply, respond with ONLY the function call(s) needed, as a Python "
+            "list like [func_name(arg=value), ...] with keyword arguments, inside a single "
+            "```python code block. One list entry per call. "
+            "Update the calls as new details arrive.\n\n"
+            f"Available functions:\n{funcs}\n\n"
+            f"First detail: {shard_text}"
+        )
     return shard_text
+
+
+def prompt_version_for(task):
+    if str(task.get("source", "")).lower().startswith("lcb"):
+        return "lcb_codeonly_v1"
+    if task.get("task") == "actions":
+        return "bfcl_calls_v1"
+    return "none"
+
+
+def tokens_so_far(backbone) -> int:
+    """Total tokens the backend has used (0 if backends.py has no usage counter yet)."""
+    return int(getattr(backbone, "total_tokens", 0) or 0)
 
 
 def simulate_one(task, backbone, feature_builder, n_resamples, run_index):
@@ -171,8 +194,10 @@ def simulate_one(task, backbone, feature_builder, n_resamples, run_index):
     task_records = []
     last_finish = None
     any_truncated = False
+    tokens_start = tokens_so_far(backbone)
 
     for t_idx, shard in enumerate(shards, start=1):
+        turn_start = tokens_so_far(backbone)
         text = first_shard_text(task, shard["shard"]) if t_idx == 1 else shard["shard"]
         history.append({"role": "user", "content": text})
         assistant_response = backbone.generate(history, temperature=0.7, max_tokens=turn_budget)
@@ -192,15 +217,18 @@ def simulate_one(task, backbone, feature_builder, n_resamples, run_index):
             resample_max_tokens=turn_budget,
         )
 
+        turn_tokens = tokens_so_far(backbone) - turn_start
         record = features.to_dict()
         record["source"] = task_source
         record["finish_reason"] = last_finish
         record["truncated"] = truncated
+        record["tokens_used"] = turn_tokens
         task_records.append(record)
         print(
             f"  [{conv_id}] Turn {t_idx}/{len(shards)} "
             f"(var={features.self_consistency_variance:.2f}, "
-            f"contra={features.contradiction_score:.2f}, finish={last_finish})",
+            f"contra={features.contradiction_score:.2f}, finish={last_finish}, "
+            f"tokens={turn_tokens})",
             flush=True,
         )
 
@@ -220,6 +248,8 @@ def simulate_one(task, backbone, feature_builder, n_resamples, run_index):
         if not valid:
             reason = "truncated"
 
+    task_tokens = tokens_so_far(backbone) - tokens_start   # includes the judge call, if any
+
     for r in task_records:
         r.update(
             eventual_success=bool(success),
@@ -230,7 +260,8 @@ def simulate_one(task, backbone, feature_builder, n_resamples, run_index):
             extractor_version=EXTRACTOR_VERSION,
             n_resamples=n_resamples,
             any_turn_truncated=any_truncated,
-            prompt_version=PROMPT_VERSION,
+            prompt_version=prompt_version_for(task),
+            task_tokens=task_tokens,
         )
 
     transcript = {
@@ -242,6 +273,7 @@ def simulate_one(task, backbone, feature_builder, n_resamples, run_index):
         "eventual_success": bool(success),
         "label_valid": bool(valid),
         "label_reason": reason,
+        "task_tokens": task_tokens,
     }
     return task_records, transcript
 
@@ -276,6 +308,8 @@ def run_simulation(
 
     backbone = LLMBackend(provider=provider, model_name=model_name)
     print(f"Using backbone: provider={backbone.provider}, model={backbone.model_name}, run={run_index}", flush=True)
+    if not hasattr(backbone, "total_tokens"):
+        print("Note: backends.py has no token counter yet, so tokens will show as 0.", flush=True)
 
     completed = get_completed_keys(output_logs_path, legacy_model)
     remaining = [
@@ -295,6 +329,7 @@ def run_simulation(
     feature_builder = FeatureBuilder()
     done_count = 0
     skipped = 0
+    batch_tokens = 0
 
     try:
         for task in tqdm(remaining[:actual_batch], desc="Simulating Batch"):
@@ -306,10 +341,10 @@ def run_simulation(
             except DailyLimitError as e:
                 print(f"\nDaily token limit reached, stopping cleanly.\n{str(e)[:300]}", flush=True)
                 break
-            except LLMError as e:
+            except (LLMError, ValueError) as e:
                 # Do not write partial/garbage conversations. They will be retried next run.
                 skipped += 1
-                print(f"[{conv_id}] SKIPPED due to LLM error: {str(e)[:200]}", flush=True)
+                print(f"[{conv_id}] SKIPPED due to error: {str(e)[:200]}", flush=True)
                 continue
 
             with open(output_logs_path, "a", encoding="utf-8") as out_f:
@@ -320,9 +355,11 @@ def run_simulation(
                 tf.write(json.dumps(transcript, ensure_ascii=False) + "\n")
 
             done_count += 1
+            batch_tokens += transcript["task_tokens"]
             print(
                 f"[{conv_id}] completed {len(records)} turns | success={transcript['eventual_success']} "
-                f"| label_valid={transcript['label_valid']} ({transcript['label_reason']})",
+                f"| label_valid={transcript['label_valid']} ({transcript['label_reason']}) "
+                f"| tokens used: {transcript['task_tokens']}",
                 flush=True,
             )
             if cool_down_seconds > 0:
@@ -332,6 +369,10 @@ def run_simulation(
         build_dataset(input_path=output_logs_path, output_dir=splits_dir)
 
     print(f"\nDone. Logged {done_count} tasks, skipped {skipped}.", flush=True)
+    if done_count:
+        print(f"Tokens this batch (finished tasks): {batch_tokens} "
+              f"(avg {batch_tokens // done_count} per task)", flush=True)
+    print(f"Tokens used by the whole process incl. discarded work: {tokens_so_far(backbone)}", flush=True)
     print(f"Remaining for this model/run: {len(remaining) - done_count}", flush=True)
 
 
@@ -346,7 +387,7 @@ def parse_args():
     p.add_argument("--output-logs", type=str, default="data/processed/raw_logs.jsonl")
     p.add_argument("--transcripts", type=str, default="data/processed/transcripts.jsonl")
     p.add_argument("--splits-dir", type=str, default="data/splits")
-    p.add_argument("--sources", type=str, default=None, help='Comma-separated task types, e.g. "livecodebench,spider"')
+    p.add_argument("--sources", type=str, default=None, help='Comma-separated task types, e.g. "lcb_easy,actions"')
     p.add_argument("--run-index", type=int, default=0, help="Repeat index for multi-run scaling")
     p.add_argument("--legacy-model", type=str, default="qwen/qwen3.8-27b",
                    help="Model name to attribute to old log rows that have no assistant_model")

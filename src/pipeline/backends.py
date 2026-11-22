@@ -25,8 +25,10 @@ def _load_groq_keys() -> list[str]:
 
 class LLMBackend:
     def __init__(self, provider: str = None, model_name: str = None):
-        groq_keys = _load_groq_keys()
+        self.total_tokens = 0
+        self.last_usage = None
         self.last_finish_reason = None
+        groq_keys = _load_groq_keys()
 
         if provider is None:
             provider = "groq" if groq_keys else "ollama"
@@ -100,6 +102,10 @@ class LLMBackend:
                 continue
 
             choice = resp.choices[0]
+            u = getattr(resp, "usage", None)
+            if u is not None:
+                self.last_usage = u
+                self.total_tokens += getattr(u, "total_tokens", 0) or 0
             self.last_finish_reason = choice.finish_reason
             text = THINK_RE.sub("", choice.message.content or "").strip()
             if not text:

@@ -14,14 +14,14 @@ with a second small classifier trained on which intervention historically
 recovered performance best for a given feature profile.
 """
 
-from src.signals.feature_fusion import TurnFeatures
+from src.signals.feature_fusion import FeatureBuilder
 
 
 def should_intervene(drift_score: float, threshold: float) -> bool:
     return drift_score >= threshold
 
 
-def select_intervention(features: TurnFeatures, dominant_signal: str) -> str:
+def select_intervention(features: FeatureBuilder, dominant_signal: str) -> str:
     """Return one of 'regrounding', 'rollback', 'targeted_clarification'
     based on which signal dominates the drift score, per the trigger table
     in Section 7.

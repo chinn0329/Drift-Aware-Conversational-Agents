@@ -23,8 +23,9 @@ import pandas as pd
 from . import plots
 from .config import load_config, resolve
 from .cv import cross_val_oof
-from .data import CID, GROUP, TURN, Y, prepare
-from .metrics import auroc, auroc_by_turn, bootstrap_ci, within_group_auroc
+from .data import CID, GROUP, MODEL, TASK, TURN, Y, prepare
+from .metrics import auroc, auroc_by_turn, bootstrap_ci, within_group_auroc, within_task_auroc
+from . import diagnostics as dx
 
 warnings.filterwarnings("ignore")
 
@@ -32,8 +33,8 @@ warnings.filterwarnings("ignore")
 def _score(df, feats, name, cfg, params=None, **kw) -> dict:
     oof = cross_val_oof(df, feats, name, cfg, params=params, **kw)
     p = np.nanmean(oof, axis=0)
-    y, g = df[Y].to_numpy(), df[CID].to_numpy()
-    wg = within_group_auroc(y, p, g, df[GROUP].to_numpy())
+    y, g = df[Y].to_numpy(), df[TASK].to_numpy()
+    wg = within_group_auroc(y, p, df[CID].to_numpy(), df[GROUP].to_numpy())
     lo, hi = bootstrap_ci(y, p, g, n=300, seed=cfg["seed"])
     return {"auroc_pooled": auroc(y, p), "pooled_ci_low": lo, "pooled_ci_high": hi,
             "auroc_within_group": wg["macro"], "p": p}
@@ -99,6 +100,25 @@ def run_evaluation(cfg: dict, model: str | None = None, verbose: bool = True) ->
     plots.line(lc.train_fraction, {"pooled": lc.auroc_pooled, "within-group": lc.auroc_within_group},
                out / "learning_curve.png", "AUROC vs training data used", "fraction of training conversations")
 
+    # 3b. do the signals add anything beyond task source? (the honest test)
+    inc, gain = dx.incremental_value(df, feats, model, cfg, params)
+    inc.to_csv(out / "incremental_over_source.csv", index=False)
+    pd.DataFrame([gain]).to_csv(out / "incremental_gain.csv", index=False)
+
+    # 3c. raw-signal audit per source, paired within-task view, generalisation to unseen models / sources
+    sbs = dx.signal_by_source(df, feats)
+    sbs.to_csv(out / "signal_by_source.csv", index=False)
+    wtp = dx.within_task_paired(df, feats)
+    wtp.to_csv(out / "within_task_paired.csv", index=False)
+    wta = within_task_auroc(df[TASK].to_numpy(), df[CID].to_numpy(), df[Y].to_numpy(), full["p"])
+    pd.DataFrame([wta]).to_csv(out / "within_task_auroc.csv", index=False)
+    lom = pd.concat([dx.leave_one_group_out(df, feats, model, cfg, params, MODEL, unseen_tasks=True),
+                     dx.leave_one_group_out(df, feats, model, cfg, params, MODEL, unseen_tasks=False)],
+                    ignore_index=True)
+    lom.to_csv(out / "leave_one_model_out.csv", index=False)
+    los = dx.leave_one_group_out(df, feats, model, cfg, params, GROUP)
+    los.to_csv(out / "leave_one_source_out.csv", index=False)
+
     # 4. leading-indicator check ----------------------------------------------------------------------
     bt = auroc_by_turn(df[TURN], df[Y], full["p"])
     bt.to_csv(out / "auroc_by_turn.csv", index=False)
@@ -106,6 +126,17 @@ def run_evaluation(cfg: dict, model: str | None = None, verbose: bool = True) ->
     if verbose:
         pd.set_option("display.width", 200)
         print("\n== Baselines (out-of-fold) ==");  print(base.round(3).to_string(index=False))
+        print("\n== Do the signals add anything beyond task source? ==");  print(inc.round(3).to_string(index=False))
+        print(f"   gain of (source + signals) over source only: {gain['gain_over_source_only']:+.3f} "
+              f"[{gain['ci_low']:+.3f}, {gain['ci_high']:+.3f}]  (interval containing 0 = no demonstrated gain)")
+        print("\n== Raw signal AUROC inside each source ==")
+        print(sbs.round(3).to_string(index=False) if len(sbs) else "   (no source has >=5 runs of each outcome)")
+        print("\n== Within-task (same task, different outcome) ==")
+        print(f"   model score: AUROC {wta['auroc']:.3f} [{wta['ci_low']:.3f}, {wta['ci_high']:.3f}] "
+              f"over {wta['n_tasks']} tasks / {wta['n_pairs']} run pairs")
+        print(wtp.round(3).to_string(index=False) if len(wtp) else "   (no task has runs with both outcomes)")
+        print("\n== Leave-one-model-out ==");  print(lom.round(3).to_string(index=False))
+        print("\n== Leave-one-source-out ==");  print(los.round(3).to_string(index=False))
         print("\n== Signal ablation ==");           print(abl.round(3).to_string(index=False))
         print("\n== Learning curve ==");            print(lc.round(3).to_string(index=False))
         print("\n== AUROC by turn ==");             print(bt.round(3).to_string(index=False))

@@ -1,0 +1,18 @@
+{
+  "run_id": "20261122-111754",
+  "primary": "xgboost",
+  "primary_reason": "xgboost has the highest selection AUROC (0.593)",
+  "threshold": 0.33,
+  "mode": "cv",
+  "fingerprint": "79b07eb881db",
+  "n_conversations": 484,
+  "n_rows": 3031,
+  "features": [
+    "self_consistency_variance",
+    "contradiction_score",
+    "confidence",
+    "confidence_delta",
+    "silent_commitment_ratio"
+  ],
+  "created": "2026-11-22T11:27:00"
+}

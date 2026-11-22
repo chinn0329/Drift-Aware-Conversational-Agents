@@ -1,3 +1,19 @@
+def update(silent_commitments: int, underspecified_turns: int) -> float:
+    """
+    Calculate the commitment ratio.
+
+    Args:
+        underspecified_turns: Total underspecified turns.
+        silent_commitments: Number of silent commitments.
+
+    Returns:
+        Commitment ratio between 0 and 1.
+    """
+    if underspecified_turns == 0:
+        return 0.0
+
+    return silent_commitments / underspecified_turns
+
 class CommitmentRatioTracker:
     def __init__(self):
         self.underspecified_turns = 0

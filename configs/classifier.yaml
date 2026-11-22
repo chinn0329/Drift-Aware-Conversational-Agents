@@ -13,14 +13,16 @@ data:
   # "raw_logs" -> read every jsonl in raw_logs_glob and re-split deterministically by
   #               conversation_id hash (use this when new conversations are appended:
   #               existing conversations never change split, new ones are assigned stably)
-  source: splits
+  source: raw_logs
   splits_dir: data/splits
   raw_logs_glob: data/processed/*.jsonl
   hash_split_fractions: {train: 0.70, val: 0.15, test: 0.15}
   hash_seed: 0
 
   # Column names in Person A's files
-  id_col: conversation_id
+  id_col: conversation_id           # = the TASK id. A run is (task, model, run index)
+  model_col: assistant_model         # missing -> "legacy" (older rows carry no model)
+  run_col: run_index                 # missing -> 0
   turn_col: turn_index
   label_col: eventual_success
   label_is_success: true             # true => failure = NOT label. drift_score = P(failure)
@@ -35,7 +37,20 @@ data:
     - silent_commitment_ratio
   extra_features: []                 # e.g. [turn_index]; off by default to keep the contract
   drop_constant_features: true       # silent_commitment_ratio is all zeros right now
-  duplicate_policy: keep             # keep | mean  (several rows can share conversation_id+turn_index)
+  duplicate_policy: keep             # keep | mean  (several rows can share run+turn inside ONE file)
+
+  # Same (run, turn) present in several jsonl files -> keep one copy (rows WITH metadata win, then newest file).
+  dedupe_across_files: true
+  # Values stored under a mistyped column name are rescued automatically (whitespace typos); add explicit ones here.
+  column_aliases: {}
+
+  # Quality filters. A flagged row removes its whole run. Rows from older exports have no metadata and pass.
+  filters:
+    require_label_valid: true        # drop runs with label_valid == 0
+    exclude_truncated: true          # reply cut off by the token limit = failure that is not drift
+    exclude_label_reasons: []        # e.g. [unparseable, refusal, no_match] to test format failures separately
+    extractor_versions: null         # e.g. [v5]; null = keep all
+    keep_missing_metadata: true      # false = drop legacy rows that have no model/run metadata
 
 # Signal groups used by explain() / dominant-signal routing for Person C.
 signal_groups:

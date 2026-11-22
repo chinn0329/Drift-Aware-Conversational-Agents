@@ -24,7 +24,7 @@ from . import plots
 from .calibration import Calibrator, cross_fit_calibrate, select_threshold, sweep_thresholds
 from .config import load_config, resolve
 from .cv import cross_val_oof, official_split_eval
-from .data import CID, GROUP, TURN, Y, prepare
+from .data import CID, GROUP, TASK, TURN, Y, prepare
 from .metrics import auroc, auroc_by_turn, bootstrap_ci, prauc, summarize, within_group_auroc
 from .models import ORDER, fit_model, should_tune
 
@@ -68,7 +68,7 @@ def _finish(name, est, used, calib, p_eval, p_rank, y_eval, meta_eval, g_eval, s
 
 
 def run_model_cv(name, df, feats, cfg, tune):
-    y, g = df[Y].to_numpy(), df[CID].to_numpy()
+    y, g = df[Y].to_numpy(), df[TASK].to_numpy()
     oof = cross_val_oof(df, feats, name, cfg, tune=tune)
     oof_mean = np.nanmean(oof, axis=0)
     per_rep = [auroc(y, oof[r]) for r in range(oof.shape[0])]
@@ -94,14 +94,14 @@ def run_model_splits(name, df, feats, cfg, tune):
     pt_cal = calib.transform(pt)
     t0 = time.perf_counter()
     fit_model(name, df[df.split == "train"][feats], df[df.split == "train"][Y].to_numpy(),
-              df[df.split == "train"][CID].to_numpy(), cfg, tune=tune, params=out["params"], seed=cfg["seed"])
+              df[df.split == "train"][TASK].to_numpy(), cfg, tune=tune, params=out["params"], seed=cfg["seed"])
     train_s = time.perf_counter() - t0
     # threshold must come from validation (never from test)
     pv_cal = calib.transform(pv)
     sweep_v = sweep_thresholds(vdf[[CID, TURN]], vdf[Y].to_numpy(), pv_cal, step=cfg["threshold"]["grid_step"])
     thr, row = select_threshold(sweep_v, cfg)
     res = _finish(name, est, out["params"], calib, pt_cal, pt, tdf[Y].to_numpy(), tdf[[CID, TURN, GROUP]],
-                  tdf[CID].to_numpy(), auroc(vdf[Y].to_numpy(), pv), cfg,
+                  tdf[TASK].to_numpy(), auroc(vdf[Y].to_numpy(), pv), cfg,
                   {"train_seconds": train_s, "eval_protocol": "train -> calibrate/threshold on val -> report test"})
     res.update({"threshold": thr, "thr_row": row, "sweep": sweep_v})
     res["eval_df"] = tdf

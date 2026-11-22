@@ -23,6 +23,7 @@ needs_data = pytest.mark.skipif(not HAVE_DATA, reason="data/splits not present")
 def _fast_cfg(tmp_path):
     cfg = load_config()
     cfg = copy.deepcopy(cfg)
+    cfg["data"]["source"] = "splits"        # tests must not depend on what the user's config currently points at
     cfg["paths"] = {"models_dir": str(tmp_path / "models"), "reports_dir": str(tmp_path / "reports")}
     cfg["evaluation"].update({"mode": "cv", "cv_repeats": 1, "cv_folds": 3, "bootstrap_samples": 20})
     cfg["models"] = ["logreg", "xgboost"]
@@ -86,6 +87,7 @@ def test_leakage_across_splits_is_rejected():
 @needs_data
 def test_real_data_loads_and_label_means_failure():
     cfg = load_config()
+    cfg["data"]["source"] = "splits"
     df, feats, rep = prepare(cfg, verbose=False)
     raw = pd.concat([pd.read_csv(REPO_ROOT / "data/splits" / f"{s}.csv") for s in ("train", "val", "test")])
     assert len(df) == len(raw)

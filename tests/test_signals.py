@@ -1,14 +1,14 @@
 """Unit tests for the four drift signals (Section 5)."""
 
-from src.signals.commitment_ratio import update_commitment_ratio
+from src.signals.commitment_ratio import update
 
 
 def test_commitment_ratio_zero_when_no_underspecified_turns():
-    assert update_commitment_ratio(0, 0) == 0.0
+    assert update(0, 0) == 0.0
 
 
 def test_commitment_ratio_basic():
-    assert update_commitment_ratio(2, 4) == 0.5
+    assert update(2, 4) == 0.5
 
 
 # TODO once implemented:

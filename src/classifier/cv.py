@@ -7,8 +7,15 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedGroupKFold
 
-from .data import CID, Y
+from .data import CID, TASK, Y
 from .models import fit_model
+
+
+def make_folds(df: pd.DataFrame, k: int, seed: int):
+    """Stratified GROUP k-fold where the group is the TASK: every run of a task (any model, any attempt) lands on
+    one side of the split, so the model cannot get credit for having seen the same task before."""
+    y, g = df[Y].to_numpy(), df[TASK].to_numpy()
+    return list(StratifiedGroupKFold(k, shuffle=True, random_state=seed).split(df, y, g))
 
 
 def n_folds(df: pd.DataFrame, want: int) -> int:
@@ -27,12 +34,11 @@ def cross_val_oof(df, feats, name, cfg, repeats=None, folds=None, params=None, t
     repeats = repeats or ev["cv_repeats"]
     seed = cfg["seed"] if seed is None else seed
     k = n_folds(df, folds or ev["cv_folds"])
-    X, y, g = df[feats], df[Y].to_numpy(), df[CID].to_numpy()
+    X, y, g = df[feats], df[Y].to_numpy(), df[TASK].to_numpy()
     oof = np.full((repeats, len(df)), np.nan)
     for r in range(repeats):
         rng = np.random.default_rng(seed + r)
-        skf = StratifiedGroupKFold(k, shuffle=True, random_state=seed + r)
-        for tr, te in skf.split(X, y, g):
+        for tr, te in make_folds(df, k, seed + r):
             if train_fraction < 1.0:
                 convs = np.unique(g[tr])
                 keep = rng.choice(convs, max(4, int(round(len(convs) * train_fraction))), replace=False)
@@ -49,7 +55,7 @@ def cross_val_oof(df, feats, name, cfg, repeats=None, folds=None, params=None, t
 def official_split_eval(df, feats, name, cfg, params=None, tune=False):
     """Fit on the given train split, score the given val/test splits (the plan's original protocol)."""
     tr = df[df["split"] == "train"]
-    est, used = fit_model(name, tr[feats], tr[Y].to_numpy(), tr[CID].to_numpy(), cfg, tune=tune, params=params,
+    est, used = fit_model(name, tr[feats], tr[Y].to_numpy(), tr[TASK].to_numpy(), cfg, tune=tune, params=params,
                           seed=cfg["seed"])
     out = {"params": used}
     for s in ("val", "test"):

@@ -1,0 +1,11 @@
+model,protocol,test_runs,test_failed,test_succeeded,train_runs,auroc,note
+legacy,test tasks unseen,271,73,198,209,0.5332110019262024,
+meta/llama-3.1-8b,test tasks unseen,45,29,16,424,0.5964733604920521,
+meta/llama-3.3-70b,test tasks unseen,8,6,2,476,,needs >= 5 runs of each outcome to score
+openai/gpt-oss-20b,test tasks unseen,159,33,126,307,0.4675651658767772,
+qwen/qwen3.8-27b,test tasks unseen,1,1,0,482,,needs >= 5 runs of each outcome to score
+legacy,test tasks seen via other groups,271,73,198,213,0.52180615331367,
+meta/llama-3.1-8b,test tasks seen via other groups,45,29,16,439,0.6061186995766434,
+meta/llama-3.3-70b,test tasks seen via other groups,8,6,2,476,,needs >= 5 runs of each outcome to score
+openai/gpt-oss-20b,test tasks seen via other groups,159,33,126,325,0.5190758293838863,
+qwen/qwen3.8-27b,test tasks seen via other groups,1,1,0,483,,needs >= 5 runs of each outcome to score

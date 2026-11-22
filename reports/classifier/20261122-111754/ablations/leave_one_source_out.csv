@@ -1,0 +1,8 @@
+group,protocol,test_runs,test_failed,test_succeeded,train_runs,auroc,note
+actions,test tasks seen via other groups,107,19,88,377,0.5911649491812535,
+data2text,test tasks seen via other groups,121,22,99,363,0.5732891011182032,
+humaneval,test tasks seen via other groups,45,34,11,439,0.3915716521350324,
+lcb_easy,test tasks seen via other groups,29,10,19,455,0.6764285714285714,
+lcb_medium,test tasks seen via other groups,41,20,21,443,0.7611785168844392,
+math,test tasks seen via other groups,103,16,87,381,0.5149704559484962,
+summary,test tasks seen via other groups,38,21,17,446,0.5870295698924731,

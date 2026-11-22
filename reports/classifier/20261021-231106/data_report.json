@@ -1,0 +1,67 @@
+{
+  "warnings": [
+    "Group 'database': every one of its 45 conversations succeeded (group is a confound).",
+    "Group 'lcb_easy': every one of its 18 conversations failed (group is a confound).",
+    "Group 'lcb_medium': every one of its 33 conversations failed (group is a confound)."
+  ],
+  "n_rows": 1043,
+  "n_conversations": 171,
+  "conversation_failure_rate": 0.5321637426900585,
+  "per_split": {
+    "test": {
+      "conversations": 26,
+      "rows": 160,
+      "failed": 16,
+      "succeeded": 10
+    },
+    "train": {
+      "conversations": 119,
+      "rows": 716,
+      "failed": 62,
+      "succeeded": 57
+    },
+    "val": {
+      "conversations": 26,
+      "rows": 167,
+      "failed": 13,
+      "succeeded": 13
+    }
+  },
+  "per_group": {
+    "actions": {
+      "conversations": 3,
+      "failure_rate": 0.6666666666666666
+    },
+    "database": {
+      "conversations": 45,
+      "failure_rate": 0.0
+    },
+    "humaneval": {
+      "conversations": 45,
+      "failure_rate": 0.7555555555555555
+    },
+    "lcb_easy": {
+      "conversations": 18,
+      "failure_rate": 1.0
+    },
+    "lcb_medium": {
+      "conversations": 33,
+      "failure_rate": 1.0
+    },
+    "math": {
+      "conversations": 27,
+      "failure_rate": 0.14814814814814814
+    }
+  },
+  "duplicate_turn_rows": 0,
+  "nan_features": {},
+  "constant_features": [],
+  "features_used": [
+    "self_consistency_variance",
+    "contradiction_score",
+    "confidence",
+    "confidence_delta",
+    "silent_commitment_ratio"
+  ],
+  "fingerprint": "8624df0ea727"
+}

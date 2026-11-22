@@ -81,3 +81,53 @@ def within_group_auroc(y, p, cids, groups, min_conv_per_class: int = 3) -> dict:
         if min(int(conv_y.sum()), int((1 - conv_y).sum())) >= min_conv_per_class:
             out[str(g)] = auroc(y[mk], p[mk])
     return {"per_group": out, "macro": float(np.mean(list(out.values()))) if out else float("nan")}
+
+
+def bootstrap_diff_ci(y, p_a, p_b, groups, fn=auroc, n: int = 1000, seed: int = 0, alpha: float = 0.05):
+    """Paired bootstrap of fn(p_a) - fn(p_b), resampling whole groups (tasks). Returns (diff, lo, hi).
+    Use it to ask 'does adding the signals improve on source alone?' without eyeballing overlapping intervals."""
+    y, p_a, p_b, groups = map(np.asarray, (y, p_a, p_b, groups))
+    rng = np.random.default_rng(seed)
+    idx_by = {g: np.where(groups == g)[0] for g in np.unique(groups)}
+    keys = list(idx_by)
+    diffs = []
+    for _ in range(n):
+        pick = rng.choice(len(keys), len(keys), replace=True)
+        idx = np.concatenate([idx_by[keys[i]] for i in pick])
+        a, b = fn(y[idx], p_a[idx]), fn(y[idx], p_b[idx])
+        if not (np.isnan(a) or np.isnan(b)):
+            diffs.append(a - b)
+    point = fn(y, p_a) - fn(y, p_b)
+    if not diffs:
+        return float(point), float("nan"), float("nan")
+    return float(point), float(np.quantile(diffs, alpha / 2)), float(np.quantile(diffs, 1 - alpha / 2))
+
+
+def _task_pairs(tasks, runs, y, p):
+    """Run-level mean score per run, then every (failed run, succeeded run) pair of the SAME task."""
+    d = pd.DataFrame({"task": tasks, "run": runs, "y": y, "p": p}).groupby(["task", "run"], as_index=False) \
+        .agg(y=("y", "first"), p=("p", "mean"))
+    out = {}
+    for t, g in d.groupby("task"):
+        f, s = g[g.y == 1].p.to_numpy(), g[g.y == 0].p.to_numpy()
+        if len(f) and len(s):
+            out[t] = (f[:, None] > s[None, :]).astype(float) + 0.5 * (f[:, None] == s[None, :])
+    return out
+
+
+def within_task_auroc(tasks, runs, y, p, n_boot: int = 500, seed: int = 0) -> dict:
+    """AUROC using ONLY pairs of runs of the same task that ended differently (e.g. two models on one task).
+    Task difficulty cancels out, so this is the cleanest check that a score tracks what went wrong in the run.
+    Returns {"auroc", "ci_low", "ci_high", "n_tasks", "n_pairs"} (NaN when no task has both outcomes)."""
+    pairs = _task_pairs(tasks, runs, y, p)
+    if not pairs:
+        return {"auroc": float("nan"), "ci_low": float("nan"), "ci_high": float("nan"), "n_tasks": 0, "n_pairs": 0}
+    keys = list(pairs)
+    point = float(np.concatenate([m.ravel() for m in pairs.values()]).mean())
+    rng = np.random.default_rng(seed)
+    boots = []
+    for _ in range(n_boot):
+        pick = rng.choice(len(keys), len(keys), replace=True)
+        boots.append(np.concatenate([pairs[keys[i]].ravel() for i in pick]).mean())
+    return {"auroc": point, "ci_low": float(np.quantile(boots, 0.025)), "ci_high": float(np.quantile(boots, 0.975)),
+            "n_tasks": len(keys), "n_pairs": int(sum(m.size for m in pairs.values()))}

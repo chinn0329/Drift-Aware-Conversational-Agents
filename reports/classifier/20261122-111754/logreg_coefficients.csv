@@ -1,0 +1,6 @@
+feature,std_coef_toward_failure
+silent_commitment_ratio,0.5112045628155583
+contradiction_score,0.13888621966228124
+confidence,-0.11542319662623857
+self_consistency_variance,0.07807842009150857
+confidence_delta,-0.010946554594020714

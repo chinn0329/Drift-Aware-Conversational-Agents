@@ -1,0 +1,148 @@
+{
+  "warnings": [
+    "12 (run, turn) pairs still have several rows inside one file.",
+    "Only 11 task(s) have runs with both outcomes; the cleanest within-task test has very little to work with.",
+    "self_consistency_variance is built from <=2 resamples (one pairwise distance): very noisy."
+  ],
+  "n_rows": 3031,
+  "n_conversations": 484,
+  "n_tasks": 465,
+  "conversation_failure_rate": 0.29338842975206614,
+  "per_split": {
+    "test": {
+      "conversations": 71,
+      "rows": 430,
+      "failed": 24,
+      "succeeded": 47
+    },
+    "train": {
+      "conversations": 337,
+      "rows": 2106,
+      "failed": 97,
+      "succeeded": 240
+    },
+    "val": {
+      "conversations": 76,
+      "rows": 495,
+      "failed": 21,
+      "succeeded": 55
+    }
+  },
+  "per_group": {
+    "actions": {
+      "conversations": 107,
+      "failure_rate": 0.17757009345794392
+    },
+    "data2text": {
+      "conversations": 121,
+      "failure_rate": 0.18181818181818182
+    },
+    "humaneval": {
+      "conversations": 45,
+      "failure_rate": 0.7555555555555555
+    },
+    "lcb_easy": {
+      "conversations": 29,
+      "failure_rate": 0.3448275862068966
+    },
+    "lcb_medium": {
+      "conversations": 41,
+      "failure_rate": 0.4878048780487805
+    },
+    "math": {
+      "conversations": 103,
+      "failure_rate": 0.1553398058252427
+    },
+    "summary": {
+      "conversations": 38,
+      "failure_rate": 0.5526315789473685
+    }
+  },
+  "per_model": {
+    "legacy": {
+      "conversations": 271,
+      "failure_rate": 0.2693726937269373
+    },
+    "meta/llama-3.1-8b": {
+      "conversations": 45,
+      "failure_rate": 0.6444444444444445
+    },
+    "meta/llama-3.3-70b": {
+      "conversations": 8,
+      "failure_rate": 0.75
+    },
+    "openai/gpt-oss-20b": {
+      "conversations": 159,
+      "failure_rate": 0.20754716981132076
+    },
+    "qwen/qwen3.8-27b": {
+      "conversations": 1,
+      "failure_rate": 1.0
+    }
+  },
+  "source_by_model": {
+    "('actions', 'legacy')": 3,
+    "('actions', 'openai/gpt-oss-20b')": 104,
+    "('data2text', 'legacy')": 120,
+    "('data2text', 'qwen/qwen3.8-27b')": 1,
+    "('humaneval', 'legacy')": 45,
+    "('lcb_easy', 'meta/llama-3.1-8b')": 7,
+    "('lcb_easy', 'openai/gpt-oss-20b')": 22,
+    "('lcb_medium', 'meta/llama-3.1-8b')": 8,
+    "('lcb_medium', 'openai/gpt-oss-20b')": 33,
+    "('math', 'legacy')": 103,
+    "('summary', 'meta/llama-3.1-8b')": 30,
+    "('summary', 'meta/llama-3.3-70b')": 8
+  },
+  "label_reasons": {
+    "ok": 127,
+    "llm_judge": 39,
+    "wrong_answer_t0": 16,
+    "wrong_call_count": 7,
+    "unparseable": 5,
+    "wrong_answer_t1": 5,
+    "no_match": 4,
+    "runtime_error_t0": 3,
+    "wrong_answer_t11": 2,
+    "refusal": 1,
+    "wrong_answer_t10": 1,
+    "timeout_t0": 1
+  },
+  "tasks_with_several_runs": 19,
+  "tasks_with_both_outcomes": 11,
+  "duplicate_turn_rows": 12,
+  "nan_features": {},
+  "constant_features": [],
+  "n_resamples": {
+    "2": 1398
+  },
+  "features_used": [
+    "self_consistency_variance",
+    "contradiction_score",
+    "confidence",
+    "confidence_delta",
+    "silent_commitment_ratio"
+  ],
+  "fingerprint": "79b07eb881db",
+  "load_log": {
+    "rows_in": 4534,
+    "aliases": {
+      "self_consi  stency_variance": {
+        "into": "self_consistency_variance",
+        "cells_rescued": 1,
+        "conflicting_values": 0
+      }
+    },
+    "dedupe_across_files": {
+      "rows_dropped": 1116,
+      "dropped_rows_that_differed": 0
+    },
+    "filters": {
+      "label_valid==0": {
+        "runs_dropped": 53,
+        "rows_dropped": 387
+      }
+    },
+    "rows_out": 3031
+  }
+}

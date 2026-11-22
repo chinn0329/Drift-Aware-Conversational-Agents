@@ -8,7 +8,7 @@ and a threshold that decides when Person C's intervention fires.
 ```bash
 pip install -r requirements-classifier.txt
 scripts/train_classifier.sh          # Windows: scripts\train_classifier.bat
-python -m pytest tests/test_classifier.py -q
+pytest tests/test_classifier.py -q
 ```
 
 Equivalent pieces: `python -m src.classifier.data` (data report) -> `python -m src.classifier.train` ->
@@ -26,6 +26,31 @@ split because the split is a hash of `conversation_id`). Then rerun the script. 
 | Hyperparameter search | `auto`: off below 150 conversations, grid search above |
 | Model choice | simplest model within 0.01 AUROC of the best (within-group AUROC) |
 | History | every run appended to `reports/classifier/runs_history.csv` |
+
+## How the data is interpreted (multi-file, multi-model logs)
+
+| Term | Meaning |
+|---|---|
+| **task** | the benchmark item (`conversation_id` in Person A's files). Cross-validation and bootstrap GROUP by task, so every attempt of a task stays on one side of a split. |
+| **run** | one attempt = task + `assistant_model` + `run_index`. This is the "conversation" for labels, conversation-level metrics and the per-run consistency check. Rows without model metadata are the model `legacy`, run 0. |
+
+The same task run by two models with different outcomes is **two runs, not a label conflict**.
+
+Loading steps (all reported at the top of every run, all switchable in `data.*` of the config):
+1. every `*.jsonl` in `data/processed/` is read; mistyped column names (whitespace) are folded into the real column;
+2. the same (run, turn) present in several files is kept once (rows with metadata win, then the newest file);
+3. runs flagged `label_valid == 0`, truncated, or in `exclude_label_reasons` / not in `extractor_versions` are dropped whole;
+4. a run whose rows disagree on the outcome stops the pipeline (that would be a real data error).
+
+## Extra evaluation outputs (reports/classifier/<run>/ablations/)
+
+| File | Question it answers |
+|---|---|
+| `incremental_over_source.csv`, `incremental_gain.csv` | Do the signals add anything beyond task source? Paired CI on the gain. |
+| `signal_by_source.csv` | Raw AUROC of each signal inside each source, with CI and a check of the expected direction (audit table for Person A). |
+| `within_task_auroc.csv`, `within_task_paired.csv` | Same task, different outcome: does the score (or each signal) separate them? |
+| `leave_one_model_out.csv` | Does it transfer to an unseen model? Strict (unseen tasks) and lenient (seen tasks) protocols. |
+| `leave_one_source_out.csv` | Does it transfer to an unseen task source? |
 
 ## Output layout
 

@@ -18,6 +18,8 @@ data:
   raw_logs_glob: data/processed/*.jsonl
   hash_split_fractions: {train: 0.70, val: 0.15, test: 0.15}
   hash_seed: 0
+  trajectory_features: false
+  trajectory_stats: [cummax, cummean, dfirst]
 
   # Column names in Person A's files
   id_col: conversation_id           # = the TASK id. A run is (task, model, run index)
@@ -125,3 +127,4 @@ threshold:
   target_recall: 0.80                # target_recall
   max_flag_rate: 0.50                # max_flag_rate (share of turns that may trigger intervention)
   grid_step: 0.01
+  max_false_alarm: 0.25

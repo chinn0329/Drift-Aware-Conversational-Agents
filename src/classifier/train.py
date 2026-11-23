@@ -133,7 +133,10 @@ def make_bundle(name, res, df, feats, cfg, run_id, mode, rep):
         "signal_groups": cfg["signal_groups"], "healthy_ref": healthy_ref,
         "meta": {"run_id": run_id, "model": name, "params": res["params"], "mode": mode,
                  "fingerprint": rep["fingerprint"], "n_conversations": rep["n_conversations"],
-                 "threshold_strategy": cfg["threshold"]["strategy"], "metrics": res["metrics"]},
+                 "threshold_strategy": cfg["threshold"]["strategy"], "metrics": res["metrics"],
+                 "trajectory": ({"base": [f for f in feats if "__" not in f],
+                                 "stats": list(d.get("trajectory_stats") or ["cummax", "cummean", "dfirst"])}
+                                if d.get("trajectory_features") else None)},
     }
 
 
@@ -191,6 +194,8 @@ def run_training(cfg: dict, models=None, mode=None, tune=None, verbose=True) -> 
                      "ece": m["ece"], "base_rate": m["base_rate"], "threshold": res["threshold"],
                      "auroc_within_group": m["auroc_within_group"], "turn_recall@thr": row["recall"], "turn_precision@thr": row["precision"],
                      "flag_rate@thr": row["flag_rate"], "conv_recall@thr": row["conv_recall"],
+                     "conv_recall_early@thr": row["conv_recall_early"],
+                     "conv_false_alarm_early@thr": row["conv_false_alarm_early"],
                      "conv_false_alarm@thr": row["conv_false_alarm"], "train_s": m["train_seconds"],
                      "predict_ms": m["predict_ms"], "primary": name == primary,
                      "params": json.dumps(res["params"], default=list)})
@@ -240,7 +245,8 @@ def run_training(cfg: dict, models=None, mode=None, tune=None, verbose=True) -> 
     if verbose:
         pd.set_option("display.width", 200)
         print("\n" + summary[["model", "auroc", "auroc_ci_low", "auroc_ci_high", "auroc_within_group", "pr_auc", "brier", "ece",
-                              "threshold", "flag_rate@thr", "conv_recall@thr", "conv_false_alarm@thr",
+                              "threshold", "flag_rate@thr", "conv_recall@thr", "conv_recall_early@thr",
+                              "conv_false_alarm@thr", "conv_false_alarm_early@thr",
                               "train_s", "predict_ms"]].round(3).to_string(index=False))
         print(f"\n[train] primary = {primary}: {why}")
         print(f"[train] threshold = {pres['threshold']:.2f} ({cfg['threshold']['strategy']}) | "
@@ -255,7 +261,7 @@ def main():
     ap.add_argument("--mode", choices=["cv", "splits"])
     ap.add_argument("--tune", choices=["true", "false"])
     ap.add_argument("--primary")
-    ap.add_argument("--strategy", choices=["youden", "fbeta", "target_recall", "max_flag_rate"])
+    ap.add_argument("--strategy", choices=["youden", "fbeta", "target_recall", "max_flag_rate", "max_false_alarm"])
     ap.add_argument("--source", choices=["splits", "raw_logs"])
     a = ap.parse_args()
     cfg = load_config(a.config)

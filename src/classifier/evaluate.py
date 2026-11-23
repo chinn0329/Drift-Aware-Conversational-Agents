@@ -73,7 +73,7 @@ def run_evaluation(cfg: dict, model: str | None = None, verbose: bool = True) ->
     # 2. signal ablation ------------------------------------------------------------------------------
     arows = []
     for gname, cols in cfg["signal_groups"].items():
-        cols = [c for c in cols if c in feats]
+        cols = [f for f in feats if f.split("__")[0] in set(cols)]   # include derived trajectory columns
         if not cols:
             continue
         only = _score(df, cols, model, cfg, params)
@@ -106,9 +106,10 @@ def run_evaluation(cfg: dict, model: str | None = None, verbose: bool = True) ->
     pd.DataFrame([gain]).to_csv(out / "incremental_gain.csv", index=False)
 
     # 3c. raw-signal audit per source, paired within-task view, generalisation to unseen models / sources
-    sbs = dx.signal_by_source(df, feats)
+    base_feats = [f for f in feats if "__" not in f]      # raw audits only make sense on the measured signals
+    sbs = dx.signal_by_source(df, base_feats)
     sbs.to_csv(out / "signal_by_source.csv", index=False)
-    wtp = dx.within_task_paired(df, feats)
+    wtp = dx.within_task_paired(df, base_feats)
     wtp.to_csv(out / "within_task_paired.csv", index=False)
     wta = within_task_auroc(df[TASK].to_numpy(), df[CID].to_numpy(), df[Y].to_numpy(), full["p"])
     pd.DataFrame([wta]).to_csv(out / "within_task_auroc.csv", index=False)
@@ -127,8 +128,10 @@ def run_evaluation(cfg: dict, model: str | None = None, verbose: bool = True) ->
         pd.set_option("display.width", 200)
         print("\n== Baselines (out-of-fold) ==");  print(base.round(3).to_string(index=False))
         print("\n== Do the signals add anything beyond task source? ==");  print(inc.round(3).to_string(index=False))
-        print(f"   gain of (source + signals) over source only: {gain['gain_over_source_only']:+.3f} "
-              f"[{gain['ci_low']:+.3f}, {gain['ci_high']:+.3f}]  (interval containing 0 = no demonstrated gain)")
+        for k in ("gain_over_source_only", "gain_over_source_and_model"):
+            if k in gain:
+                print(f"   {k.replace('_', ' ')}: {gain[k]:+.3f} [{gain[k + '_ci_low']:+.3f}, {gain[k + '_ci_high']:+.3f}]"
+                      "  (interval containing 0 = no demonstrated gain)")
         print("\n== Raw signal AUROC inside each source ==")
         print(sbs.round(3).to_string(index=False) if len(sbs) else "   (no source has >=5 runs of each outcome)")
         print("\n== Within-task (same task, different outcome) ==")

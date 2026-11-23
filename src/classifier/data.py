@@ -278,6 +278,33 @@ def select_features(df: pd.DataFrame, cfg: dict) -> list[str]:
     return feats
 
 
+TRAJ_STATS = ("cummax", "cummean", "dfirst")
+
+
+def add_trajectory_features(df: pd.DataFrame, feats: list[str], stats=TRAJ_STATS):
+    """Causal per-run summaries of each signal: running max, running mean, and change since the run's first turn.
+
+    Drift is a trajectory, and a single turn's value is noisy (self-consistency here rests on 2 resamples). Only
+    PAST and CURRENT turns are used, so the same numbers can be built live (see predict.TrajectoryTracker).
+    Needs rows ordered by turn within each run (load_table guarantees this).
+    Returns (df_with_new_columns, feature_names_including_new_ones).
+    """
+    df = df.copy()
+    new = []
+    for f in feats:
+        g = df.groupby(CID, sort=False)[f]
+        if "cummax" in stats:
+            df[f"{f}__cummax"] = g.cummax()
+            new.append(f"{f}__cummax")
+        if "cummean" in stats:
+            df[f"{f}__cummean"] = g.transform(lambda s: s.expanding().mean())
+            new.append(f"{f}__cummean")
+        if "dfirst" in stats:
+            df[f"{f}__dfirst"] = df[f] - g.transform("first")
+            new.append(f"{f}__dfirst")
+    return df, list(feats) + new
+
+
 def fingerprint(df: pd.DataFrame) -> str:
     ids = "|".join(sorted(df[CID].unique()))
     return hashlib.sha1(f"{len(df)}#{ids}".encode()).hexdigest()[:12]
@@ -288,6 +315,9 @@ def prepare(cfg: dict, verbose: bool = True):
     df, log = load_table(cfg, return_log=True)
     rep = validate(df, cfg)
     feats = select_features(df, cfg)
+    dd = cfg["data"]
+    if dd.get("trajectory_features"):
+        df, feats = add_trajectory_features(df, feats, dd.get("trajectory_stats") or TRAJ_STATS)
     rep.update({"features_used": feats, "fingerprint": fingerprint(df), "load_log": log})
     if verbose:
         print(f"[data] {log['rows_in']} raw rows -> {rep['n_rows']} rows | {rep['n_conversations']} runs of "

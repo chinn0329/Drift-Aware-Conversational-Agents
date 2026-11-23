@@ -56,6 +56,7 @@ def sweep_thresholds(meta: pd.DataFrame, y, p, step: float = 0.01) -> pd.DataFra
 
     turn-level : precision / recall(TPR) / FPR / F1 / flag_rate (share of turns that would trigger an intervention)
     conversation-level : conv_recall (failing conversations flagged at least once),
+                         *_early variants count only flags BEFORE the run's last turn (an intervention needs lead time),
                          conv_false_alarm (succeeding conversations flagged at least once = "unnecessary intervention"),
                          first_flag_turn (mean first flagged turn among caught failing conversations).
     `meta` needs columns conversation_id and turn_index, aligned with y and p.
@@ -66,6 +67,9 @@ def sweep_thresholds(meta: pd.DataFrame, y, p, step: float = 0.01) -> pd.DataFra
     conv_ids, inv = np.unique(cid, return_inverse=True)
     conv_y = np.zeros(len(conv_ids), int)
     conv_y[inv] = y
+    last_turn = np.zeros(len(conv_ids))
+    np.maximum.at(last_turn, inv, turn)
+    not_last = turn < last_turn[inv]          # an intervention can only help if it fires BEFORE the final turn
     rows = []
     for t in np.arange(step, 1.0, step):
         f = p >= t
@@ -80,12 +84,16 @@ def sweep_thresholds(meta: pd.DataFrame, y, p, step: float = 0.01) -> pd.DataFra
         first = np.full(len(conv_ids), np.inf)
         np.minimum.at(first, inv[f], turn[f])
         caught = ever & (conv_y == 1)
+        early = np.zeros(len(conv_ids), bool)
+        np.logical_or.at(early, inv, f & not_last)
         rows.append({
             "threshold": round(float(t), 4), "precision": prec, "recall": rec, "fpr": fpr, "f1": f1,
             "flag_rate": float(f.mean()),
             "conv_recall": float(caught.sum() / max(1, (conv_y == 1).sum())),
             "conv_false_alarm": float((ever & (conv_y == 0)).sum() / max(1, (conv_y == 0).sum())),
             "first_flag_turn": float(first[caught].mean()) if caught.any() else np.nan,
+            "conv_recall_early": float((early & (conv_y == 1)).sum() / max(1, (conv_y == 1).sum())),
+            "conv_false_alarm_early": float((early & (conv_y == 0)).sum() / max(1, (conv_y == 0).sum())),
         })
     return pd.DataFrame(rows)
 
@@ -104,6 +112,14 @@ def select_threshold(sweep: pd.DataFrame, cfg: dict) -> tuple[float, dict]:
     elif strat == "target_recall":
         ok = s[s["recall"] >= c["target_recall"]]
         row = ok.iloc[-1] if len(ok) else s.loc[s["recall"].idxmax()]  # highest threshold still meeting the target
+    elif strat == "max_false_alarm":
+        # most failing runs caught early, subject to a cap on succeeding runs interrupted needlessly
+        ok = s[s["conv_false_alarm_early"] <= c["max_false_alarm"]]
+        if len(ok):
+            best = ok["conv_recall_early"].max()
+            row = ok[ok["conv_recall_early"] == best].iloc[-1]          # highest threshold among ties
+        else:
+            row = s.loc[s["conv_false_alarm_early"].idxmin()]
     elif strat == "max_flag_rate":
         ok = s[s["flag_rate"] <= c["max_flag_rate"]]
         row = ok.loc[ok["recall"].idxmax()] if len(ok) else s.loc[s["flag_rate"].idxmin()]

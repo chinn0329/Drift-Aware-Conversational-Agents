@@ -27,21 +27,42 @@ def _onehot(df: pd.DataFrame, col: str, prefix: str):
 
 
 def incremental_value(df, feats, name, cfg, params=None, repeats=None) -> tuple[pd.DataFrame, dict]:
-    """Source only  vs  source + signals  vs  signals only (out-of-fold, same folds).
-    The paired CI on (source+signals) - (source only) is THE test of whether the signals add anything."""
+    """What do the signals add BEYOND who/what produced the run?  (out-of-fold, same folds, paired CIs)
+
+        source only                    source + model
+        source + signals               source + model + signals      <- the strict test
+        signals only
+
+    Task source and assistant model both differ in failure rate AND in how their signals look, so a model that
+    gets credit for the signals may only be recognising the model. The gain over 'source + model' is the number
+    to report; the gain over 'source only' alone is the weaker claim.
+    """
     d2, src = _onehot(df, GROUP, "src")
+    multi_model = d2[MODEL].nunique() > 1
+    if multi_model:
+        d2, mdl = _onehot(d2, MODEL, "mdl")
+    else:
+        mdl = []
     y, tasks = d2[Y].to_numpy(), d2[TASK].to_numpy()
-    oof = {}
-    for label, cols in (("source only", src), ("signals only", feats), ("source + signals", src + feats)):
-        oof[label] = np.nanmean(cross_val_oof(d2, cols, name, cfg, params=params, repeats=repeats), axis=0)
+    sets = {"source only": src, "signals only": feats, "source + signals": src + feats}
+    if multi_model:
+        sets.update({"source + model": src + mdl, "source + model + signals": src + mdl + feats})
+    oof = {k: np.nanmean(cross_val_oof(d2, cols, name, cfg, params=params, repeats=repeats), axis=0)
+           for k, cols in sets.items()}
     rows = []
     for label, p in oof.items():
         wg = within_group_auroc(y, p, d2[CID].to_numpy(), d2[GROUP].to_numpy())["macro"]
         lo, hi = bootstrap_ci(y, p, tasks, n=300, seed=cfg["seed"])
         rows.append({"model_inputs": label, "auroc_pooled": auroc(y, p), "ci_low": lo, "ci_high": hi,
                      "auroc_within_group": wg})
-    diff, dlo, dhi = bootstrap_diff_ci(y, oof["source + signals"], oof["source only"], tasks, n=300, seed=cfg["seed"])
-    return pd.DataFrame(rows), {"gain_over_source_only": diff, "ci_low": dlo, "ci_high": dhi}
+    gains = {}
+    pairs = [("gain_over_source_only", "source + signals", "source only")]
+    if multi_model:
+        pairs.append(("gain_over_source_and_model", "source + model + signals", "source + model"))
+    for key, a, b in pairs:
+        d, lo, hi = bootstrap_diff_ci(y, oof[a], oof[b], tasks, n=300, seed=cfg["seed"])
+        gains[key], gains[key + "_ci_low"], gains[key + "_ci_high"] = d, lo, hi
+    return pd.DataFrame(rows), gains
 
 
 def signal_by_source(df, feats, min_runs: int = 5, n_boot: int = 300, seed: int = 0) -> pd.DataFrame:
@@ -110,7 +131,9 @@ def leave_one_group_out(df, feats, name, cfg, params, col: str, min_runs: int = 
         tr = df[~te_mask & ~df[TASK].isin(te[TASK])] if unseen_tasks else df[~te_mask]
         runs = te.groupby(CID)[Y].first()
         nf, ns = int(runs.sum()), int((1 - runs).sum())
-        row = {col: g, "protocol": "test tasks unseen" if unseen_tasks else "test tasks seen via other groups",
+        proto = ("held-out " + col) if col != MODEL else (
+            "test tasks unseen" if unseen_tasks else "test tasks seen via other models")
+        row = {col: g, "protocol": proto,
                "test_runs": len(runs), "test_failed": nf, "test_succeeded": ns, "train_runs": tr[CID].nunique(),
                "auroc": np.nan, "note": ""}
         if min(nf, ns) < min_runs:

@@ -52,6 +52,42 @@ Loading steps (all reported at the top of every run, all switchable in `data.*` 
 | `leave_one_model_out.csv` | Does it transfer to an unseen model? Strict (unseen tasks) and lenient (seen tasks) protocols. |
 | `leave_one_source_out.csv` | Does it transfer to an unseen task source? |
 
+## Trajectory features (optional, off by default)
+
+`data.trajectory_features: true` adds, for every signal, its running max, running mean and change since turn 1
+(`<signal>__cummax`, `__cummean`, `__dfirst`). They use only the current and past turns, so they can be built live.
+Why: a single turn's value is noisy (self-consistency rests on 2 resamples) and drift is a trajectory.
+
+A model trained this way needs per-conversation history at runtime. Person C keeps one tracker per conversation:
+
+```python
+from src.classifier.predict import TrajectoryTracker, predict_drift_score, explain
+tracker = TrajectoryTracker()                    # pass-through if the model has no trajectory features
+feats = tracker.update(turn_features)            # adds the derived columns
+score = predict_drift_score(feats)
+tracker.truncate(k)                              # after a ROLLBACK to turn k: forget the discarded turns
+```
+A raw feature dict is refused by a trajectory model (it raises) rather than silently scored worse.
+
+## Threshold strategies
+
+| strategy | picks the threshold that... |
+|---|---|
+| `youden` (default) | maximises recall - false-positive rate (turn level) |
+| `max_false_alarm` | catches the most failing runs EARLY, while interrupting at most `max_false_alarm` of succeeding runs |
+| `target_recall`, `max_flag_rate`, `fbeta` | see config |
+
+"Early" = flagged before the run's last turn; an intervention needs lead time. The sweep CSV and the training table
+report `conv_recall_early` and `conv_false_alarm_early` next to the any-turn versions.
+
+## Contract for the rest of the team (unchanged by retraining)
+
+`predict_drift_score(dict) -> float in [0,1]`, `should_intervene`, `explain` (dominant signal in
+`self_consistency | contradiction | confidence | silent_commitment`, or None), `get_threshold()`, and
+`models/latest.json`. Retraining changes the scores, the threshold and which signal dominates, so callers must read
+the threshold from `get_threshold()` and never hard-code it. Features at runtime must be computed exactly as in
+training (same extractor version, same number of resamples), otherwise the model is off-distribution.
+
 ## Output layout
 
 ```

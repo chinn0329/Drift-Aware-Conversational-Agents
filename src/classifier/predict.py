@@ -50,6 +50,43 @@ def clear_cache():
     _CACHE.clear()
 
 
+class TrajectoryTracker:
+    """Per-conversation helper for models trained with data.trajectory_features: true.
+
+        tracker = TrajectoryTracker()                       # one per conversation
+        feats = tracker.update(raw_turn_features)           # adds <signal>__cummax / __cummean / __dfirst
+        score = predict_drift_score(feats)
+        tracker.truncate(k)                                 # after a ROLLBACK to turn k: forget turns > k
+
+    For a model WITHOUT trajectory features it is a harmless pass-through, so callers can always use it.
+    """
+
+    def __init__(self, models_dir=None, base=None, stats=None):
+        if base is None:
+            tr = load_bundle(models_dir)["meta"].get("trajectory") or {}
+            base, stats = tr.get("base", []), tr.get("stats", [])
+        self.base, self.stats = list(base), list(stats or [])
+        self.history: list[dict] = []
+
+    def update(self, features) -> dict:
+        feats = dict(features)
+        self.history.append({f: float(feats.get(f, np.nan)) for f in self.base})
+        out = dict(feats)
+        for f in self.base:
+            v = np.array([h[f] for h in self.history], dtype=float)
+            ok = v[~np.isnan(v)]
+            if "cummax" in self.stats:
+                out[f"{f}__cummax"] = float(ok.max()) if len(ok) else np.nan
+            if "cummean" in self.stats:
+                out[f"{f}__cummean"] = float(ok.mean()) if len(ok) else np.nan
+            if "dfirst" in self.stats:
+                out[f"{f}__dfirst"] = float(v[-1] - ok[0]) if len(ok) else np.nan
+        return out
+
+    def truncate(self, keep_turns: int):
+        self.history = self.history[:keep_turns]
+
+
 def _frame(features, bundle: dict) -> pd.DataFrame:
     if isinstance(features, pd.DataFrame):
         df = features.copy()
@@ -63,6 +100,11 @@ def _frame(features, bundle: dict) -> pd.DataFrame:
         if len(vals) != len(order):
             raise ValueError(f"Expected {len(order)} features in order {order}, got {len(vals)}")
         df = pd.DataFrame([dict(zip(order, vals))])
+    if bundle["meta"].get("trajectory"):
+        missing = [c for c in bundle["features"] if "__" in c and c not in df.columns]
+        if missing:
+            raise ValueError("This model was trained with trajectory features; pass the dict returned by "
+                             f"TrajectoryTracker.update(...) (missing {missing[:3]}...).")
     for c in bundle["features"]:
         if c not in df.columns:
             df[c] = np.nan
@@ -105,7 +147,8 @@ def explain(features, models_dir=None) -> dict:
     full = float(_score(b, X)[0])
     contrib = {}
     for gname, cols in b["signal_groups"].items():
-        cols = [c for c in cols if c in b["features"]]
+        base = set(cols)                          # a group also owns its derived <signal>__<stat> columns
+        cols = [c for c in b["features"] if c.split("__")[0] in base]
         if not cols:
             contrib[gname] = 0.0
             continue

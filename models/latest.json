@@ -1,5 +1,5 @@
 {
-  "run_id": "20261122-111754",
+  "run_id": "20261122-220402",
   "primary": "xgboost",
   "primary_reason": "xgboost has the highest selection AUROC (0.593)",
   "threshold": 0.33,
@@ -14,5 +14,5 @@
     "confidence_delta",
     "silent_commitment_ratio"
   ],
-  "created": "2026-11-22T11:27:00"
+  "created": "2026-11-22T22:12:34"
 }

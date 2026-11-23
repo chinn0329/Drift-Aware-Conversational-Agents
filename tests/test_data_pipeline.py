@@ -154,3 +154,79 @@ def test_leave_one_model_out_reports_when_nothing_is_left_to_train_on():
     assert (strict.train_runs == 0).all() and strict.note.str.contains("no training runs left").all()
     lenient = leave_one_group_out(df, ["f"], "logreg", cfg, None, "model", unseen_tasks=False)
     assert lenient.auroc.notna().all() and (lenient.train_runs == 30).all()
+
+
+def test_incremental_test_can_tell_model_identity_from_real_signal():
+    """If the 'signal' is just a fingerprint of the model, it must add nothing once the model is controlled for."""
+    from src.classifier.diagnostics import incremental_value
+    rng = np.random.default_rng(0)
+    rows = []
+    for task in range(120):
+        for model in ("a", "b"):
+            fail = int(rng.uniform() < (0.7 if model == "b" else 0.2))           # model b fails more
+            for turn in (1, 2, 3):
+                rows.append({"conversation_id": f"{task}|{model}|0", "task_id": f"t{task}", "model": model,
+                             "turn_index": turn, "y": fail, "group": "g",
+                             "f": float(rng.normal(1.0 if model == "b" else 0.0, 0.3))})   # f only encodes the model
+    df = pd.DataFrame(rows)
+    cfg = copy.deepcopy(load_config())
+    cfg["evaluation"].update({"cv_repeats": 1, "cv_folds": 4})
+    tbl, gains = incremental_value(df, ["f"], "logreg", cfg, repeats=1)
+    assert set(tbl.model_inputs) == {"source only", "signals only", "source + signals", "source + model",
+                                     "source + model + signals"}
+    assert gains["gain_over_source_only"] > 0.1                                  # looks like the signal helps...
+    assert gains["gain_over_source_and_model_ci_low"] <= 0.05                    # ...but not beyond the model
+
+
+def test_trajectory_features_are_causal_and_match_the_live_tracker():
+    from src.classifier.data import add_trajectory_features
+    from src.classifier.predict import TrajectoryTracker
+    df = pd.DataFrame({"conversation_id": ["r1"] * 4 + ["r2"] * 3, "turn_index": [1, 2, 3, 4, 1, 2, 3],
+                       "v": [0.1, 0.5, 0.2, 0.9, 0.4, 0.4, 0.1], "c": [0.8, 0.7, 0.9, 0.3, 0.5, 0.6, 0.7]})
+    out, feats = add_trajectory_features(df, ["v", "c"])
+    assert feats == ["v", "c"] + [f"{f}__{s}" for f in ("v", "c") for s in ("cummax", "cummean", "dfirst")]
+    r1 = out[out.conversation_id == "r1"]
+    assert r1["v__cummax"].tolist() == [0.1, 0.5, 0.5, 0.9]
+    assert r1["v__cummean"].iloc[2] == pytest.approx((0.1 + 0.5 + 0.2) / 3)
+    assert r1["v__dfirst"].tolist() == pytest.approx([0.0, 0.4, 0.1, 0.8])
+    # changing a FUTURE turn must not change an earlier row (causality)
+    df2 = df.copy()
+    df2.loc[3, "v"] = 0.0
+    out2, _ = add_trajectory_features(df2, ["v", "c"])
+    assert out2.loc[:2, feats].equals(out.loc[:2, feats])
+    # the live tracker reproduces the training columns turn by turn
+    tr = TrajectoryTracker(base=["v", "c"], stats=["cummax", "cummean", "dfirst"])
+    for i, row in r1.iterrows():
+        live = tr.update({"v": row.v, "c": row.c})
+        for f in feats:
+            assert live[f] == pytest.approx(row[f])
+    tr.truncate(2)                                         # rollback to turn 2
+    live = tr.update({"v": 0.3, "c": 0.8})
+    assert live["v__cummax"] == pytest.approx(0.5) and live["v__cummean"] == pytest.approx((0.1 + 0.5 + 0.3) / 3)
+
+
+def test_trajectory_model_end_to_end_and_guard(tmp_path):
+    from src.classifier import predict
+    from src.classifier.config import REPO_ROOT
+    from src.classifier.train import run_training
+    if not (REPO_ROOT / "data" / "splits" / "train.csv").exists():
+        pytest.skip("data/splits not present")
+    cfg = copy.deepcopy(load_config())
+    cfg["data"].update({"source": "splits", "trajectory_features": True})
+    cfg["paths"] = {"models_dir": str(tmp_path / "m"), "reports_dir": str(tmp_path / "r")}
+    cfg["evaluation"].update({"mode": "cv", "cv_repeats": 1, "cv_folds": 3, "bootstrap_samples": 20})
+    cfg["models"] = ["logreg"]
+    out = run_training(cfg, verbose=False)
+    assert any("__cummean" in f for f in out["features"])
+    predict.clear_cache()
+    mdir = tmp_path / "m"
+    raw = {"self_consistency_variance": 0.4, "contradiction_score": 0.9, "confidence": 0.5, "confidence_delta": -0.3,
+           "silent_commitment_ratio": 0.0}
+    with pytest.raises(ValueError, match="trajectory"):
+        predict.predict_drift_score(raw, models_dir=mdir)                 # raw dict is refused, not silently degraded
+    tr = predict.TrajectoryTracker(models_dir=mdir)
+    for _ in range(3):
+        s = predict.predict_drift_score(tr.update(raw), models_dir=mdir)
+        assert 0.0 <= s <= 1.0
+    ex = predict.explain(tr.update(raw), models_dir=mdir)
+    assert set(ex["contributions"]) == set(cfg["signal_groups"])
